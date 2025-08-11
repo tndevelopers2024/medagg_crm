@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+:root {
+	--color-bg: #fff;
+	--color-primary: #6366f1;
+	--color-secondary: #f43f5e;
+	--color-card: #fff;
+	--color-border: #e5e7eb;
+	--color-text: #1e293b;
+}
+
+html {
+	box-sizing: border-box;
+	font-size: 16px;
+	background: var(--color-bg);
+	color: var(--color-text);
+}
+
+*, *::before, *::after {
+	box-sizing: inherit;
+}
+
+body {
+	margin: 0;
+	font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+	background: var(--color-bg);
+	color: var(--color-text);
+	min-height: 100vh;
+	line-height: 1.5;
+}
+
+a {
+	color: var(--color-primary);
+	text-decoration: none;
+	transition: color 0.2s;
+}
+a:hover {
+	color: var(--color-secondary);
+}
+
+h1, h2, h3, h4, h5, h6 {
+	font-weight: 700;
+	margin-top: 0;
+
+}
+
+input, button, textarea, select {
+	font: inherit;
+	outline: none;
+}
+
+button {
+	cursor: pointer;
+	border: none;
+	border-radius: 0.5rem;
+	background: var(--color-primary);
+	color: #fff;
+	padding: 0.5rem 1.25rem;
+	font-weight: 500;
+	transition: background 0.2s;
+}
+button:hover {
+	background: var(--color-secondary);
+}
+
+::-webkit-scrollbar {
+	width: 8px;
+	background: #e5e7eb;
+}
+::-webkit-scrollbar-thumb {
+	background: #cbd5e1;
+	border-radius: 4px;
+}
