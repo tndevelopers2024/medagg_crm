@@ -1,6 +1,6 @@
 // MedCRMLogin.jsx
 import React, { useState } from "react";
-import { login } from "../../uilts/api";
+import { login } from "../../utils/api";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 import { FcGoogle } from "react-icons/fc";
 

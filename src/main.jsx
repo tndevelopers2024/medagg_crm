@@ -8,6 +8,9 @@ import { SocketProvider } from "./contexts/SocketProvider.jsx";
 import AdminLayout from "./layout/AdminLayout.jsx";
 import LoginForm from "./pages/login/LoginPage.jsx";
 import Dashboard from "./pages/admin/dashboard/page.jsx";
+import AllLeads from "./pages/admin/allleads/page.jsx";
+import Callers from "./pages/admin/callers/page.jsx";
+import CallerDashboard from "./pages/admin/caller/page.jsx";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
@@ -20,6 +23,9 @@ createRoot(document.getElementById("root")).render(
           {/* Admin area wrapped by AdminLayout */}
           <Route element={<AdminLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/leads" element={<AllLeads />} />
+            <Route path="/callers" element={<Callers />} />
+            <Route path="/callers/:id" element={<CallerDashboard />} />
           </Route>
         </Routes>
       </BrowserRouter>

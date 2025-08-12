@@ -2,8 +2,8 @@
 
 :root {
 	--color-bg: #fff;
-	--color-primary: #6366f1;
-	--color-secondary: #f43f5e;
+	--color-primary: #322554;
+	--color-secondary: #E9296A;
 	--color-card: #fff;
 	--color-border: #e5e7eb;
 	--color-text: #1e293b;
@@ -29,14 +29,7 @@ body {
 	line-height: 1.5;
 }
 
-a {
-	color: var(--color-primary);
-	text-decoration: none;
-	transition: color 0.2s;
-}
-a:hover {
-	color: var(--color-secondary);
-}
+
 
 h1, h2, h3, h4, h5, h6 {
 	font-weight: 700;
@@ -49,9 +42,8 @@ input, button, textarea, select {
 	outline: none;
 }
 
-button {
+.button {
 	cursor: pointer;
-	border: none;
 	border-radius: 0.5rem;
 	background: var(--color-primary);
 	color: #fff;
@@ -59,7 +51,7 @@ button {
 	font-weight: 500;
 	transition: background 0.2s;
 }
-button:hover {
+.button:hover {
 	background: var(--color-secondary);
 }
 

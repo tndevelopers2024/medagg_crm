@@ -1,6 +1,6 @@
 // src/contexts/SocketContext.jsx
 import { createContext, useContext, useEffect, useState } from 'react';
-import { initializeSocket, getSocket, disconnectSocket } from '../uilts/socket';
+import { initializeSocket, getSocket, disconnectSocket } from '../utils/socket';
 
 const SocketContext = createContext();
 

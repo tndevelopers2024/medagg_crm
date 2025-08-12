@@ -1,4 +1,3 @@
-// src/components/Sidebar.jsx
 import React from "react";
 import { NavLink } from "react-router-dom";
 import {
@@ -8,17 +7,32 @@ import {
   FiClipboard,
   FiSettings,
   FiLogOut,
+  FiUserCheck, 
 } from "react-icons/fi";
 
-const nav = [
-  { to: "/dashboard", label: "Dashboard", icon: FiHome },
-  { to: "/leads", label: "Leads", icon: FiUsers },
-  { to: "/reports", label: "Reports", icon: FiBarChart2 },
-  { to: "/tasks", label: "Tasks", icon: FiClipboard },
-  { to: "/settings", label: "Settings", icon: FiSettings },
-];
-
 export default function Sidebar({ open, onClose }) {
+  const [role, setRole] = React.useState(null);
+
+  React.useEffect(() => {
+    try {
+      const r = localStorage.getItem("role");
+      setRole(r || null);
+    } catch {}
+  }, []);
+
+  const nav = React.useMemo(
+    () =>
+      [
+        { to: "/dashboard", label: "Dashboard", icon: FiHome },
+        { to: "/leads", label: "Leads", icon: FiUsers },
+       { to: "/callers", label: "Callers", icon: FiUserCheck } ,
+        { to: "/reports", label: "Reports", icon: FiBarChart2 },
+        { to: "/tasks", label: "Tasks", icon: FiClipboard },
+        { to: "/settings", label: "Settings", icon: FiSettings },
+      ].filter(Boolean),
+    [role]
+  );
+
   return (
     <aside
       className={`transform transition-transform lg:translate-x-0 static ${
@@ -26,12 +40,10 @@ export default function Sidebar({ open, onClose }) {
       }`}
       aria-label="Sidebar"
     >
-      {/* Brand header */}
-      <div className="flex items-center gap-3 px-5 h-16" >
-      <img src="/img/favlogo.svg" alt="" />
+      <div className="flex items-center gap-3 px-5 h-16">
+        <img src="/img/favlogo.svg" alt="Logo" />
       </div>
 
-      {/* Nav */}
       <nav className="px-3 py-4 overflow-y-auto h-[calc(100%-4rem)]">
         <ul className="space-y-1">
           {nav.map(({ to, label, icon: Icon }) => (
@@ -39,11 +51,12 @@ export default function Sidebar({ open, onClose }) {
               <NavLink
                 to={to}
                 onClick={onClose}
+                title={label} 
                 className={({ isActive }) =>
                   [
                     "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition",
                     isActive
-                      ? "bg-[#f3ecff] text-[#5a1ea6]"
+                      ? "bg-[#E9296A] text-[#fff] text-center"
                       : "text-gray-700 hover:bg-gray-100",
                   ].join(" ")
                 }
@@ -52,8 +65,10 @@ export default function Sidebar({ open, onClose }) {
                   <>
                     <Icon
                       className={[
-                        "text-[18px]",
-                        isActive ? "text-[#7d3bd6]" : "text-gray-500 group-hover:text-gray-700",
+                        "text-[18px] m-auto",
+                        isActive
+                          ? "text-[#fff] "
+                          : "text-gray-500 group-hover:text-gray-700",
                       ].join(" ")}
                     />
                     {/* <span>{label}</span> */}
@@ -64,11 +79,9 @@ export default function Sidebar({ open, onClose }) {
           ))}
         </ul>
 
-        {/* Bottom action */}
         <div className="mt-6 border-t pt-4">
           <button className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-100">
             <FiLogOut className="text-[18px]" />
-          
           </button>
         </div>
       </nav>
