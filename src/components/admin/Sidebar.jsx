@@ -23,12 +23,12 @@ export default function Sidebar({ open, onClose }) {
   const nav = React.useMemo(
     () =>
       [
-        { to: "/dashboard", label: "Dashboard", icon: FiHome },
-        { to: "/leads", label: "Leads", icon: FiUsers },
-       { to: "/callers", label: "Callers", icon: FiUserCheck } ,
-        { to: "/reports", label: "Reports", icon: FiBarChart2 },
-        { to: "/tasks", label: "Tasks", icon: FiClipboard },
-        { to: "/settings", label: "Settings", icon: FiSettings },
+        { to: "/admin/dashboard", label: "Dashboard", icon: FiHome },
+        { to: "/admin/leads", label: "Leads", icon: FiUsers },
+        { to: "/admin/callers", label: "Callers", icon: FiUserCheck },
+        // { to: "/admin/reports", label: "Reports", icon: FiBarChart2 },
+        // { to: "/admin/tasks", label: "Tasks", icon: FiClipboard },
+        // { to: "/admin/settings", label: "Settings", icon: FiSettings },
       ].filter(Boolean),
     [role]
   );

@@ -41,7 +41,7 @@ const useParsedLeads = (rows = []) =>
       createdTime: lead.createdTime ? new Date(lead.createdTime) : null,
       assignedTo: lead.assignedTo || null,
       name: fields.name || "—",
-      source: lead.campaignId || "—",
+      source: lead.campaignId || fields.source || "Website",
       phone: fields.phone || "—",
       raw: lead,
     };
@@ -201,7 +201,7 @@ export default function Dashboard() {
       <div className="px-1 flex items-center justify-between">
         <h3 className="font-semibold text-2xl">Recent Leads</h3>
         <button
-          onClick={() => navigate("/leads")}
+          onClick={() => navigate("/admin/leads")}
           className="text-sm button text-[#7d3bd6] "
         >
           View all

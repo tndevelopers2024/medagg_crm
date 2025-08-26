@@ -32,15 +32,29 @@ export default function MedCRMLogin({
     setLoading(true);
     try {
       const data = await login(email, password);
+
+      // Persist token/user if "Remember me" is checked
       if (data?.token && remember) {
         localStorage.setItem("token", data.token);
         if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
       }
+
       if (typeof onSuccess === "function") onSuccess(data);
-    
-        if (router?.push) router.push('/dashboard');
-        else window.location.assign('/dashboard');
-      
+
+      // ---- Role-based redirect ----
+      const role = String(data?.role || "").toLowerCase();
+      const roleDestinations = {
+        admin: "/admin/dashboard",
+        caller: "/caller/dashboard",
+      };
+
+      const destination =
+        roleDestinations[role] || redirectTo || "/";
+
+      if (router?.push) router.push(destination);
+      else window.location.assign(destination);
+      // -----------------------------
+
     } catch (error) {
       const msg =
         error?.response?.data?.error ||
@@ -64,13 +78,11 @@ export default function MedCRMLogin({
             </div>
 
             <div className=" flex justify-center px-4 my-6">
-          
-                <img
-                  src="/img/login/banner.png"
-                  alt="Dashboard preview"
-                  className="w-[80%] max-w-[560px] rounded-2xl shadow-2xl"
-                />
-             
+              <img
+                src="/img/login/banner.png"
+                alt="Dashboard preview"
+                className="w-[80%] max-w-[560px] rounded-2xl shadow-2xl"
+              />
             </div>
 
             <div className="text-center">
@@ -174,8 +186,6 @@ export default function MedCRMLogin({
                     Sign up
                   </a>
                 </p>
-
-              
               </form>
             </div>
           </section>

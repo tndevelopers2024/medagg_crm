@@ -440,7 +440,7 @@ export default function CallerDashboard() {
 <div className="px-2 pt-4 flex items-center justify-between">
           <h3 className="font-semibold text-2xl">Assigned Leads</h3>
           <button
-            onClick={() => navigate(`/leads?callerId=${encodeURIComponent(id)}`)}
+            onClick={() => navigate(`/admin/leads?callerId=${encodeURIComponent(id)}`)}
             className="text-xs text-[#7d3bd6] hover:underline"
           >
             Show All <FiChevronDown className="inline-block -rotate-90" />
@@ -518,7 +518,7 @@ export default function CallerDashboard() {
         </div>
         <div className="flex justify-center py-3">
           <button
-            onClick={() => navigate(`/leads?callerId=${encodeURIComponent(id)}`)}
+            onClick={() => navigate(`/admin/leads?callerId=${encodeURIComponent(id)}`)}
             className="text-[12px] font-medium text-[#ff2e6e] hover:underline"
           >
             Show All

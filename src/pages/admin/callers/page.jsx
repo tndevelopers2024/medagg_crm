@@ -210,7 +210,7 @@ export default function Callers() {
                       </Link>
                       <button
                         onClick={() =>
-                          navigate(`/leads?callerId=${encodeURIComponent(c.id)}`)
+                          navigate(`/admin/leads?callerId=${encodeURIComponent(c.id)}`)
                         }
                         className="rounded-xl bg-white px-3 py-1.5 text-xs ring-1 ring-gray-200 hover:bg-gray-50"
                         title="View this caller's leads"
