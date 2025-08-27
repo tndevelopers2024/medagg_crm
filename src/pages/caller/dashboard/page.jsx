@@ -1,5 +1,5 @@
 // src/pages/CallerDashboard.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import {
   FiPhoneCall,
   FiTarget,
@@ -9,13 +9,20 @@ import {
   FiClock,
   FiTrendingUp,
   FiPieChart,
-  FiArrowRight,
   FiPlus,
+  FiBell,
+  FiInfo,
+  FiUser,
+  FiMessageSquare,
+  FiX,
 } from "react-icons/fi";
+import { createPortal } from "react-dom";
 import { getMe, fetchAssignedLeads } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useNavigate } from "react-router-dom";
-// ---------- helpers ----------
+import { useSocket } from "../../../contexts/SocketProvider";
+
+/* -------------------- helpers -------------------- */
 const cls = (...c) => c.filter(Boolean).join(" ");
 const dicebear = (seed) =>
   `https://api.dicebear.com/7.x/initials/svg?radius=50&fontWeight=700&seed=${encodeURIComponent(
@@ -75,6 +82,7 @@ const normStatus = (s) => {
   return v;
 };
 
+/* -------------------- progress/metric UI -------------------- */
 const Progress = ({ value = 0, max = 100, tone = "primary" }) => {
   const pct = Math.max(0, Math.min(100, Math.round((value / max) * 100)));
   const toneMap = {
@@ -122,12 +130,11 @@ const StatCard = ({ title, value, sub, icon, accent = "violet", onClick }) => {
     indigo: "text-indigo-600 bg-indigo-50",
   };
   return (
-     <button
+    <button
       type="button"
       onClick={onClick}
       className="text-left w-full rounded-2xl border border-gray-100 bg-white p-4 shadow-sm hover:shadow-md transition"
     >
-    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
       <div className="flex items-start gap-3">
         <div className={cls("p-2 rounded-xl", accents[accent])}>{icon}</div>
         <div className="flex-1">
@@ -138,7 +145,6 @@ const StatCard = ({ title, value, sub, icon, accent = "violet", onClick }) => {
           </div>
         </div>
       </div>
-    </div>
     </button>
   );
 };
@@ -194,7 +200,229 @@ const TaskRow = ({ name, tag, dueIn = "—" }) => (
   </div>
 );
 
-// ---------- main ----------
+/* -------------------- TOASTS (socket popups) -------------------- */
+const formatPhoneNumber = (phone) => {
+  if (!phone) return "—";
+  const cleaned = String(phone).replace(/\D/g, "");
+  return cleaned.length === 10
+    ? `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`
+    : String(phone);
+};
+
+const getFieldExact = (fd = [], name) =>
+  fd.find((f) => (f?.name || "").toLowerCase() === String(name).toLowerCase())?.values?.[0] || "";
+
+const summarizeSocketLead = (p = {}) => {
+  // Accept both new intake payload shape and generic db lead shape
+  const fd = p.fieldData || p.field_data || [];
+  const leadDetails = p.leadDetails || {};
+  const name =
+    p.leadName ||
+    getFieldExact(fd, "full_name") ||
+    getFieldExact(fd, "name") ||
+    getFieldExact(fd, "lead_name") ||
+    "—";
+  const phone =
+    leadDetails.phone ||
+    getFieldExact(fd, "phone_number") ||
+    getFieldExact(fd, "phone") ||
+    getFieldExact(fd, "mobile") ||
+    "—";
+  const email = getFieldExact(fd, "email") || getFieldExact(fd, "email_address") || "—";
+  const source = leadDetails.source || getFieldExact(fd, "source") || getFieldExact(fd, "page_name") || "Website";
+  const message =
+    leadDetails.message ||
+    getFieldExact(fd, "concern") ||
+    getFieldExact(fd, "message") ||
+    getFieldExact(fd, "comments") ||
+    getFieldExact(fd, "notes") ||
+    "—";
+  const createdRaw = p.created_time || p.createdTime || p.createdAt || p.created_at || leadDetails.time || Date.now();
+  const createdTime = createdRaw ? new Date(createdRaw) : new Date();
+  const id = p.lead_id || p.id || p._id || p.leadId || "";
+  return { id, name, phone, email, source, message, createdTime };
+};
+
+function Toast({ toast, onClose, onAction, isExiting }) {
+  const tone =
+    toast.tone === "success"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+      : toast.tone === "warning"
+      ? "border-amber-300 bg-amber-50 text-amber-800"
+      : toast.tone === "error"
+      ? "border-red-300 bg-red-50 text-red-800"
+      : "border-indigo-300 bg-indigo-50 text-indigo-800";
+
+  const Icon = toast.icon || FiBell;
+
+  return (
+    <div
+      className={`w-[380px] rounded-xl border p-4 shadow-lg ${tone} ${
+        isExiting ? "animate-toastOut" : "animate-toastIn"
+      } transition-all duration-300 transform`}
+      style={{
+        maxHeight: isExiting ? 0 : "500px",
+        opacity: isExiting ? 0 : 1,
+        marginBottom: isExiting ? 0 : "0.75rem",
+        overflow: "hidden",
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5">
+          <Icon className="text-lg" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold leading-5 truncate flex items-center gap-2">
+            {toast.title}
+            {toast.leadName && (
+              <span className="text-xs font-normal bg-black/10 px-2 py-0.5 rounded-full">
+                {toast.leadName}
+              </span>
+            )}
+          </div>
+
+          {toast.message ? (
+            <div className="text-sm opacity-90 mt-1 break-words">{toast.message}</div>
+          ) : null}
+
+          {toast.leadDetails && (
+            <div className="mt-3 pt-2 border-t border-current border-opacity-20">
+              <div className="space-y-1.5 text-xs">
+                {toast.leadDetails.phone && (
+                  <div className="flex items-center gap-2">
+                    <FiPhoneCall className="opacity-60" />
+                    <span>{formatPhoneNumber(toast.leadDetails.phone)}</span>
+                  </div>
+                )}
+                {toast.leadDetails.email && toast.leadDetails.email !== "—" && (
+                  <div className="flex items-center gap-2">
+                    <FiUser className="opacity-60" />
+                    <span className="truncate">{toast.leadDetails.email}</span>
+                  </div>
+                )}
+                {toast.leadDetails.source && (
+                  <div className="flex items-center gap-2">
+                    <FiInfo className="opacity-60" />
+                    <span>From: {toast.leadDetails.source}</span>
+                  </div>
+                )}
+                {toast.leadDetails.message && toast.leadDetails.message !== "—" && (
+                  <div className="flex items-center gap-2">
+                    <FiMessageSquare className="opacity-60" />
+                    <span className="line-clamp-2">{toast.leadDetails.message}</span>
+                  </div>
+                )}
+                {toast.leadDetails.time && (
+                  <div className="flex items-center gap-2 text-xs opacity-70">
+                    <FiCalendar className="opacity-60" />
+                    <span>{toast.leadDetails.time}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {toast.action ? (
+            <button
+              onClick={onAction}
+              className="mt-3 text-sm font-medium bg-black/10 hover:bg-black/20 px-3 py-1.5 rounded-md transition-colors"
+            >
+              {toast.action.label}
+            </button>
+          ) : null}
+        </div>
+        <button
+          onClick={onClose}
+          className="rounded-full p-1 hover:bg-black/10 transition"
+          aria-label="Close"
+          title="Close"
+        >
+          <FiX />
+        </button>
+      </div>
+    </div>
+  );
+}
+const ToastPortal = ({ children }) => (typeof document === "undefined" ? null : createPortal(children, document.body));
+function ToastStack({ toasts, remove }) {
+  return (
+    <ToastPortal>
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col-reverse gap-3">
+        {toasts.map((t) => (
+          <Toast
+            key={t.id}
+            toast={t}
+            onClose={() => remove(t.id)}
+            onAction={() => {
+              if (typeof t.action?.onClick === "function") t.action.onClick();
+              remove(t.id);
+            }}
+            isExiting={t.isExiting}
+          />
+        ))}
+      </div>
+    </ToastPortal>
+  );
+}
+function useToasts() {
+  const [toasts, setToasts] = useState([]);
+  const remove = useCallback((id) => {
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, isExiting: true } : t)));
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 300);
+  }, []);
+  const push = useCallback(
+    (t) => {
+      const id =
+        (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
+        `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const timeout = t.timeout ?? 10000;
+      setToasts((prev) => [{ id, ...t }, ...prev]);
+      if (timeout > 0) setTimeout(() => remove(id), timeout);
+    },
+    [remove]
+  );
+  return { toasts, push, remove };
+}
+
+/* -------------------- socket helpers (dedupe + refresh) -------------------- */
+const useEventDeduper = (windowMs = 8000) => {
+  const seenRef = useRef(new Map());
+  useEffect(() => {
+    const t = setInterval(() => {
+      const now = Date.now();
+      for (const [k, v] of seenRef.current.entries()) {
+        if (now - v > windowMs) seenRef.current.delete(k);
+      }
+    }, windowMs);
+    return () => clearInterval(t);
+  }, [windowMs]);
+  return useCallback((key) => {
+    const k = String(key || "");
+    const now = Date.now();
+    const exists = seenRef.current.has(k);
+    seenRef.current.set(k, now);
+    return exists;
+  }, []);
+};
+
+const useSoftAssignedRefresh = (setter) => {
+  const lastRef = useRef(0);
+  const inflightRef = useRef(false);
+  return useCallback(async () => {
+    const now = Date.now();
+    if (inflightRef.current || now - lastRef.current < 1200) return;
+    inflightRef.current = true;
+    try {
+      const res = await fetchAssignedLeads();
+      setter(res.leads || []);
+      lastRef.current = Date.now();
+    } finally {
+      inflightRef.current = false;
+    }
+  }, [setter]);
+};
+
+/* -------------------- page -------------------- */
 export default function CallersDashboard() {
   const [me, setMe] = useState(null);
   const [leads, setLeads] = useState([]);
@@ -203,6 +431,13 @@ export default function CallersDashboard() {
   usePageTitle("Caller Dashboard", "Welcome back");
   const navigate = useNavigate();
 
+  // socket + toasts
+  const { socket, isConnected } = useSocket();
+  const { toasts, push, remove } = useToasts();
+  const dedupe = useEventDeduper(8000);
+  const softRefreshAssigned = useSoftAssignedRefresh(setLeads);
+
+  // initial load
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -213,11 +448,7 @@ export default function CallersDashboard() {
         setMe(user);
         setLeads(assigned.leads || []);
       } catch (e) {
-        setErr(
-          e?.response?.data?.message ||
-            e?.message ||
-            "Failed to load dashboard data"
-        );
+        setErr(e?.response?.data?.message || e?.message || "Failed to load dashboard data");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -227,7 +458,139 @@ export default function CallersDashboard() {
     };
   }, []);
 
-  // ---------- derive ----------
+  // toast helper
+  const notify = useCallback(
+    (title, message, opts = {}) => {
+      const withTime = (t) => (t instanceof Date && !isNaN(t) ? t.toLocaleTimeString() : "Just now");
+      push({
+        title,
+        message,
+        icon: opts.icon || FiBell,
+        tone: opts.tone || "info",
+        timeout: opts.timeout ?? 10000,
+        leadName: opts.leadName,
+        leadDetails: opts.leadDetails && {
+          ...opts.leadDetails,
+          time: opts.leadDetails.time || withTime(new Date()),
+        },
+        action: opts.action || {
+          label: "Open My Leads",
+          onClick: () => navigate("/caller/leads"),
+        },
+      });
+    },
+    [push, navigate]
+  );
+
+  // socket → popups + data refresh
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    const onLeadIntake = (p = {}) => {
+      const s = summarizeSocketLead(p);
+      if (dedupe(`callerDash:lead:intake:${s.id}`)) return;
+      notify("New web lead", "A new lead submitted through the website.", {
+        tone: "success",
+        leadName: s.name,
+        leadDetails: {
+          phone: s.phone,
+          email: s.email,
+          source: s.source,
+          message: s.message,
+          time: s.createdTime?.toLocaleTimeString(),
+        },
+      });
+      softRefreshAssigned();
+    };
+
+    const onLeadCreated = (p = {}) => {
+      const s = summarizeSocketLead(p);
+      if (dedupe(`callerDash:lead:created:${s.id}`)) return;
+      notify("New lead created", "A new lead has been added.", {
+        leadName: s.name,
+        leadDetails: {
+          phone: s.phone,
+          email: s.email,
+          source: s.source,
+          message: s.message,
+          time: s.createdTime?.toLocaleTimeString(),
+        },
+      });
+      softRefreshAssigned();
+    };
+
+    const onLeadUpdated = (p = {}) => {
+      const s = summarizeSocketLead(p);
+      if (dedupe(`callerDash:lead:updated:${s.id}:${p.updatedAt || ""}`)) return;
+      notify("Lead updated", "Lead details were updated.", {
+        icon: FiInfo,
+        leadName: s.name,
+        leadDetails: { phone: s.phone },
+      });
+      softRefreshAssigned();
+    };
+
+    const onStatusUpdated = (p = {}) => {
+      const s = summarizeSocketLead(p);
+      if (dedupe(`callerDash:lead:status:${s.id}:${p.status || ""}`)) return;
+      notify("Lead status changed", `Status updated to: ${p?.status || "updated"}.`, {
+        icon: FiInfo,
+        leadName: s.name,
+      });
+      softRefreshAssigned();
+    };
+
+    const onActivity = (p = {}) => {
+      const s = summarizeSocketLead(p);
+      const act = p?.activity?._id || p?.activity?.action || "";
+      if (dedupe(`callerDash:lead:activity:${s.id}:${act}`)) return;
+      notify("Lead activity", `${p?.activity?.action || "Activity"} recorded.`, {
+        leadName: s.name || `Lead #${s.id}`,
+      });
+      softRefreshAssigned();
+    };
+
+    const onCallLogged = (p = {}) => {
+      const id = p?.lead?.id || p?.leadId || "";
+      if (dedupe(`callerDash:call:logged:${id}:${p?.call?._id || ""}`)) return;
+      notify("Call logged", `Call outcome: ${p?.call?.outcome || "completed"}.`, {
+        icon: FiPhoneCall,
+        tone: "success",
+      });
+      softRefreshAssigned();
+    };
+
+    const onLeadsAssigned = (p = {}) => {
+      const key = Array.isArray(p?.leadIds) ? p.leadIds.join(",") : String(p?.leadIds || "");
+      if (dedupe(`callerDash:leads:assigned:${key}`)) return;
+      const n = Array.isArray(p?.leadIds) ? p.leadIds.length : 1;
+      notify("Leads assigned", `${n} lead(s) assigned to a caller.`, { icon: FiInfo });
+      softRefreshAssigned();
+    };
+
+    socket.on?.("lead:intake", onLeadIntake);
+    socket.on?.("lead:created", onLeadCreated);
+    socket.on?.("lead:updated", onLeadUpdated);
+    socket.on?.("lead:status_updated", onStatusUpdated);
+    socket.on?.("lead:activity", onActivity);
+    socket.on?.("call:logged", onCallLogged);
+    socket.on?.("leads:assigned", onLeadsAssigned);
+
+    // heads-up toast
+    notify("Connected", "Live updates are active.", { tone: "success", timeout: 2500 });
+
+    return () => {
+      socket.off?.("lead:intake", onLeadIntake);
+      socket.off?.("lead:created", onLeadCreated);
+      socket.off?.("lead:updated", onLeadUpdated);
+      socket.off?.("lead:status_updated", onStatusUpdated);
+      socket.off?.("lead:activity", onActivity);
+      socket.off?.("call:logged", onCallLogged);
+      socket.off?.("leads:assigned", onLeadsAssigned);
+    };
+  }, [socket, isConnected, notify, dedupe, softRefreshAssigned]);
+
+  /* -------------------- computed metrics -------------------- */
   const computed = useMemo(() => {
     const now = new Date();
 
@@ -249,7 +612,6 @@ export default function CallersDashboard() {
     let opdDoneToday = 0;
     let ipdDoneToday = 0;
 
-    // tasks
     const tasksToday = [];
     const tasksTomorrow = [];
     const upcomingHour = [];
@@ -259,15 +621,12 @@ export default function CallersDashboard() {
       const fd = Array.isArray(lead.fieldData) ? lead.fieldData : [];
 
       // status/bucket
-      const statusRaw =
-        readField(fd, ["status", "lead_status", "bucket"]) || "new lead";
+      const statusRaw = readField(fd, ["status", "lead_status", "bucket"]) || "new lead";
       const status = normStatus(statusRaw);
       if (buckets[status] !== undefined) buckets[status]++;
 
-      // Created today?
       if (isToday(created)) todayNewLeads++;
 
-      // follow-ups
       const fu =
         readField(fd, [
           "next_followup",
@@ -282,36 +641,26 @@ export default function CallersDashboard() {
         if (isToday(fuDate)) tasksToday.push({ lead, fuDate });
         else if (isTomorrow(fuDate)) tasksTomorrow.push({ lead, fuDate });
         if (withinNextMinutes(fuDate, 60)) {
-          const diffMin = Math.max(
-            1,
-            Math.round((fuDate.getTime() - now.getTime()) / 60000)
-          );
+          const diffMin = Math.max(1, Math.round((fuDate.getTime() - now.getTime()) / 60000));
           upcomingHour.push({ lead, fuDate, diffMin });
         }
       }
 
-      // calls
-      const lastCall = parseDate(
-        readField(fd, ["last_call_at", "last_called_at", "last_call"])
-      );
+      const lastCall = parseDate(readField(fd, ["last_call_at", "last_called_at", "last_call"]));
       if (lastCall && isToday(lastCall)) callsMadeToday++;
       if (!lastCallAt || (lastCall && lastCall > lastCallAt)) lastCallAt = lastCall;
 
-      const callDur = Number(
-        readField(fd, ["call_duration_today", "talk_time_today"])
-      );
+      const callDur = Number(readField(fd, ["call_duration_today", "talk_time_today"]));
       if (!Number.isNaN(callDur)) callDurationMin += callDur;
 
       const idle = Number(readField(fd, ["idle_minutes_today", "idle_time"]));
       if (!Number.isNaN(idle)) idleMin += idle;
 
-      // OPD/IPD
       if (status === "opd booked" && isToday(created)) opdBookedToday++;
       if (status === "opd done" && isToday(created)) opdDoneToday++;
       if (status === "ipd done" && isToday(created)) ipdDoneToday++;
     }
 
-    // Sort upcoming by soonest
     upcomingHour.sort((a, b) => a.fuDate - b.fuDate);
 
     const lastCallAgoMin = lastCallAt
@@ -360,7 +709,7 @@ export default function CallersDashboard() {
     gray: "from-gray-300 to-gray-400",
   };
 
-  // ---------- UI ----------
+  /* -------------------- UI -------------------- */
   if (loading) {
     return (
       <main className="">
@@ -394,44 +743,41 @@ export default function CallersDashboard() {
 
   return (
     <main className="">
-      {/* Header */}
-
-
       <div className="mx-auto px-4 py-6 space-y-6">
         {/* Top stats */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-      <StatCard
-  title="Today New Leads"
-  value={computed.todayNewLeads}
-  sub={`${computed.todayNewLeads} today`}
-  icon={<FiUsers />}
-  accent="violet"
-  onClick={() => navigate("/caller/leads?date=today&status=new")}
-/>
           <StatCard
-  title={"Today's Task"}
-  value={computed.tasksTodayCount}
-  sub={`${computed.tasksTodayCount} due`}
-  icon={<FiTarget />}
-  accent="pink"
-  onClick={() => navigate("/caller/leads?date=today&status=new")}
-/>
-         <StatCard
-  title={"Tomorrow's Task"}
-  value={computed.tasksTomorrowCount}
-  sub={`${computed.tasksTomorrowCount} scheduled`}
-  icon={<FiCalendar />}
-  accent="sky"
-  onClick={() => navigate("/caller/leads?date=all&status=new")}
-/>
+            title="Today New Leads"
+            value={computed.todayNewLeads}
+            sub={`${computed.todayNewLeads} today`}
+            icon={<FiUsers />}
+            accent="violet"
+            onClick={() => navigate("/caller/leads?date=today&status=new")}
+          />
           <StatCard
-  title="OPD Booked Today"
-  value={computed.opdBookedToday}
-  sub="Target: 2"
-  icon={<FiCheckCircle />}
-  accent="emerald"
-  onClick={() => navigate("/caller/leads?date=today&status=opd%20booked")}
-/>
+            title={"Today's Task"}
+            value={computed.tasksTodayCount}
+            sub={`${computed.tasksTodayCount} due`}
+            icon={<FiTarget />}
+            accent="pink"
+            onClick={() => navigate("/caller/leads?date=today&status=new")}
+          />
+          <StatCard
+            title={"Tomorrow's Task"}
+            value={computed.tasksTomorrowCount}
+            sub={`${computed.tasksTomorrowCount} scheduled`}
+            icon={<FiCalendar />}
+            accent="sky"
+            onClick={() => navigate("/caller/leads?date=all&status=new")}
+          />
+          <StatCard
+            title="OPD Booked Today"
+            value={computed.opdBookedToday}
+            sub="Target: 2"
+            icon={<FiCheckCircle />}
+            accent="emerald"
+            onClick={() => navigate("/caller/leads?date=today&status=opd%20booked")}
+          />
           <StatCard
             title="OPD Done Today"
             value={computed.opdDoneToday}
@@ -457,11 +803,7 @@ export default function CallersDashboard() {
             <MetricCard
               title="Today Task"
               value={computed.tasksTodayCount}
-              hint={
-                computed.tasksTodayCount >= 50
-                  ? "Great progress!"
-                  : "You're at part of your daily goal"
-              }
+              hint={computed.tasksTodayCount >= 50 ? "Great progress!" : "You're at part of your daily goal"}
               footer={`${computed.tasksTodayCount}/100`}
               tone={computed.tasksTodayCount >= 50 ? "green" : "orange"}
               max={100}
@@ -498,9 +840,7 @@ export default function CallersDashboard() {
               title="Last Call Made"
               value={computed.lastCallAgoMin ? `${computed.lastCallAgoMin}m` : "—"}
               hint={computed.lastCallAgoMin ? "Great activity!" : "No call yet today"}
-              footer={
-                computed.lastCallAgoMin ? `${computed.lastCallAgoMin} mins ago` : "—"
-              }
+              footer={computed.lastCallAgoMin ? `${computed.lastCallAgoMin} mins ago` : "—"}
               tone={computed.lastCallAgoMin ? "green" : "orange"}
               max={60}
               icon={<FiPhoneCall />}
@@ -526,16 +866,8 @@ export default function CallersDashboard() {
             <MetricCard
               title="Streak"
               value={computed.callsMadeToday >= 100 ? 3 : 0}
-              hint={
-                computed.callsMadeToday >= 100
-                  ? "You're on a 3-Day Streak!"
-                  : "Build your streak"
-              }
-              footer={
-                computed.callsMadeToday >= 100
-                  ? "You’ve completed 100+ calls 3 days in a row"
-                  : "—"
-              }
+              hint={computed.callsMadeToday >= 100 ? "You're on a 3-Day Streak!" : "Build your streak"}
+              footer={computed.callsMadeToday >= 100 ? "You’ve completed 100+ calls 3 days in a row" : "—"}
               tone={computed.callsMadeToday >= 100 ? "blue" : "orange"}
               max={7}
               icon={<FiTrendingUp />}
@@ -559,19 +891,10 @@ export default function CallersDashboard() {
               {computed.upcomingHour.length ? (
                 computed.upcomingHour.map(({ lead, diffMin }, i) => {
                   const fd = lead.fieldData || [];
-                  const name =
-                    readField(fd, ["full_name", "name"]) || "Unknown Lead";
+                  const name = readField(fd, ["full_name", "name"]) || "Unknown Lead";
                   const tag =
-                    readField(fd, ["category", "service", "treatment"]) ||
-                    "Follow-up";
-                  return (
-                    <TaskRow
-                      key={lead.id || i}
-                      name={name}
-                      tag={tag}
-                      dueIn={`${diffMin}m`}
-                    />
-                  );
+                    readField(fd, ["category", "service", "treatment"]) || "Follow-up";
+                  return <TaskRow key={lead.id || i} name={name} tag={tag} dueIn={`${diffMin}m`} />;
                 })
               ) : (
                 <div className="rounded-xl border border-gray-100 p-4 text-sm text-gray-600 bg-gray-50">
@@ -597,10 +920,7 @@ export default function CallersDashboard() {
 
             <div className="space-y-4">
               {bucketList.map((b) => {
-                const pct = Math.max(
-                  0,
-                  Math.min(100, Math.round((b.value / maxBucket) * 100))
-                );
+                const pct = Math.max(0, Math.min(100, Math.round((b.value / maxBucket) * 100)));
                 return (
                   <div key={b.key} className="grid grid-cols-5 items-center gap-3">
                     <div className="col-span-2 md:col-span-1">
@@ -631,13 +951,34 @@ export default function CallersDashboard() {
       {/* Floating Action Button */}
       <button
         title="Quick actions"
-        className="fixed bottom-6 right-6 group  inline-flex items-center justify-center rounded-full p-4 bg-gradient-to-br from-[#ff2e6e] to-[#ff5aa4] text-white shadow-xl hover:opacity-95"
+        className="fixed bottom-6 right-6 group inline-flex items-center justify-center rounded-full p-4 bg-gradient-to-br from-[#ff2e6e] to-[#ff5aa4] text-white shadow-xl hover:opacity-95"
       >
         <FiPlus size={22} />
         <span className="absolute -top-1 -right-1 inline-flex items-center justify-center h-6 min-w-6 px-1 rounded-full bg-white text-[#ff2e6e] text-xs font-semibold shadow">
           3
         </span>
       </button>
+
+      {/* Socket Toasts */}
+      <ToastStack toasts={toasts} remove={remove} />
+
+      {/* Animations / clamp */}
+      <style>{`
+        @keyframes toastIn {
+          0% { transform: translateX(100%); opacity: 0; }
+          100% { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes toastOut {
+          0% { transform: translateX(0); opacity: 1; max-height: 500px; margin-bottom: 0.75rem; }
+          50% { opacity: 0; }
+          100% { transform: translateX(100%); opacity: 0; max-height: 0; margin-bottom: 0; }
+        }
+        .animate-toastIn { animation: toastIn 0.3s ease-out forwards; }
+        .animate-toastOut { animation: toastOut 0.3s ease-in forwards; }
+        .line-clamp-2 {
+          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+      `}</style>
     </main>
   );
 }

@@ -1,51 +1,34 @@
 // src/components/Topbar.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { FiBell } from "react-icons/fi";
-import { getMe } from "../../utils/api";
 import { useTopbarTitle } from "../../contexts/TopbarTitleContext";
 
 export default function Topbar() {
   const { title, subtitle } = useTopbarTitle();
 
-  const [user, setUser] = useState(() => {
-    try {
-      const cached = localStorage.getItem("user");
-      return cached ? JSON.parse(cached) : null;
-    } catch (_) {
-      return null;
-    }
-  });
-  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    let mounted = true;
-    const fetchMe = async () => {
-      setLoading(true);
-      try {
-        const res = await getMe();
-        const u = res?.user || res?.data?.user || res?.data || res;
-        if (u && mounted) {
-          setUser(u);
-          try { localStorage.setItem("user", JSON.stringify(u)); } catch {}
-        }
-      } catch {} finally {
-        if (mounted) setLoading(false);
+    try {
+      const cached = localStorage.getItem("user");
+      if (cached) {
+        setUser(JSON.parse(cached));
       }
-    };
-    const token = localStorage.getItem("token");
-    if (token) fetchMe();
-    return () => { mounted = false; };
+    } catch (err) {
+      console.error("Error parsing user from localStorage:", err);
+    }
   }, []);
 
   const name =
-    (user && (user.name || user.fullName || user.username)) ||
-    (loading ? "Loading..." : "User");
+    (user && (user.name || user.fullName || user.username)) || "User";
 
   const avatarSrc =
     user?.avatar ||
     user?.photo ||
     (user?.email
-      ? `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.email)}`
+      ? `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+          user.email
+        )}`
       : `https://i.pravatar.cc/32?u=${encodeURIComponent(name)}`);
 
   return (
@@ -58,7 +41,8 @@ export default function Topbar() {
           </h1>
           {subtitle && (
             <p className="text-[14px] text-gray-500 truncate">
-              {subtitle || `Welcome back, ${name}`}{title=="Admin Dashboard" ? ` ${user.name}` : ""}
+              {subtitle || `Welcome back, ${name}`}
+              {title === "Admin Dashboard" ? ` ${user?.name}` : ""}
             </p>
           )}
         </div>
@@ -66,7 +50,7 @@ export default function Topbar() {
         {/* Right */}
         <div className="flex items-center gap-2 md:gap-3">
           <button
-          style={{padding:6, borderRadius: "50%"}}
+            style={{ padding: 6, borderRadius: "50%" }}
             className="relative inline-flex p-0 items-center justify-center rounded-full border border-[#e2deea] bg-white hover:bg-gray-50"
             aria-label="Notifications"
           >

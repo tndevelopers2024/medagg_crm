@@ -1,5 +1,5 @@
 // src/pages/LeadsManagement.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   FiChevronDown,
   FiSearch,
@@ -8,10 +8,19 @@ import {
   FiX,
   FiChevronLeft,
   FiChevronRight,
+  FiBell,
+  FiPhoneCall,
+  FiInfo,
+  FiUser,
+  FiCalendar,
+  FiMessageSquare,
 } from "react-icons/fi";
+import { createPortal } from "react-dom";
 import { FaFacebook } from "react-icons/fa";
 import { fetchAllLeads, getAllUsers, assignLeadsToCaller } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
+import { useSocket } from "../../../contexts/SocketProvider";
+
 /* ------------------------ parsing helpers ------------------------ */
 const readField = (fieldData = [], keys = []) => {
   for (const f of fieldData) {
@@ -24,7 +33,6 @@ const readField = (fieldData = [], keys = []) => {
   return "";
 };
 
-// 2) Parse a lead using your API fields
 const parseLead = (lead) => {
   const name =
     readField(lead.fieldData, ["full_name", "lead_name", "name"]) ||
@@ -34,20 +42,17 @@ const parseLead = (lead) => {
   const phone =
     readField(lead.fieldData, ["phone_number", "phone", "mobile", "contact_number"]) || "—";
 
-  // Use top-level status for "Lead Status"
   const leadStatus =
-    (lead.status && String(lead.status).replace(/_/g, "-")) ||  // e.g., "new" -> "new"
+    (lead.status && String(lead.status).replace(/_/g, "-")) ||
     readField(lead.fieldData, ["lead_status", "status", "stage", "type"]) ||
     "—";
 
-  // These are optional; will show "—" if not present in fieldData
   const opdStatus = readField(lead.fieldData, ["opd_status", "opd"]) || "—";
   const ipdStatus = readField(lead.fieldData, ["ipd_status", "ipd"]) || "—";
   const diagnostic =
     readField(lead.fieldData, ["diagnostic", "diagnostics", "diagnostic_non", "diagnostic_status"]) ||
     "—";
 
-  // Prefer server-provided timestamps
   const createdTime = lead.createdTime ? new Date(lead.createdTime) : null;
   const lastUpdate =
     (lead.lastCallAt && new Date(lead.lastCallAt)) ||
@@ -55,7 +60,6 @@ const parseLead = (lead) => {
     (lead.createdAt && new Date(lead.createdAt)) ||
     createdTime;
 
-  // Source label
   const source =
     readField(lead.fieldData, ["source"]) ||
     (String(lead.campaignId || "").toLowerCase().includes("meta")
@@ -82,69 +86,248 @@ const parseLead = (lead) => {
   };
 };
 
-const exportCsv = (rows, filename = "leads.csv") => {
-  const headers = [
-    "Lead Name",
-    "Phone",
-    "Source",
-    "Lead Status",
-    "OPD Status",
-    "IPD Status",
-    "Diagnostic/Non",
-    "AssignedTo",
-    "Last Update",
-  ];
-  const lines = rows.map((r) =>
-    [
-      r.name,
-      r.phone,
-      r.source,
-      r.leadStatus,
-      r.opdStatus,
-      r.ipdStatus,
-      r.diagnostic,
-      r.assignedTo || "Unassigned",
-      r.createdTime ? r.createdTime.toISOString() : "",
-    ]
-      .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
-      .join(",")
+// Socket → minimal lead for upsert
+const socketPayloadToLead = (p = {}) => {
+  const fieldData = p.fieldData || p.field_data || [];
+  return {
+    _id: p._id || p.id,
+    id: p._id || p.id,
+    leadId: p.lead_id || p.leadId,
+    createdTime:
+      p.created_time || p.createdTime || p.created_at || p.createdAt || new Date().toISOString(),
+    fieldData,
+    status: p.status || "new",
+    assignedTo: p.assigned_to || p.assignedTo || null,
+    campaignId: p.campaignId || null,
+  };
+};
+
+/* ------------------------ toast helpers ------------------------ */
+const formatPhoneNumber = (phone) => {
+  if (!phone) return "—";
+  const cleaned = String(phone).replace(/\D/g, "");
+  return cleaned.length === 10
+    ? `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`
+    : String(phone);
+};
+
+const getField = (fd = [], name) =>
+  fd.find((f) => (f?.name || "").toLowerCase() === String(name).toLowerCase())?.values?.[0] || "";
+
+function summarizeSocketLead(p = {}) {
+  const s = p.summary || {};
+  const fd = p.fieldData || p.field_data || [];
+
+  const name =
+    s.name || getField(fd, "full_name") || getField(fd, "name") || getField(fd, "lead_name") || "—";
+  const phone =
+    s.phone || getField(fd, "phone_number") || getField(fd, "phone") || getField(fd, "mobile") || "—";
+  const email = s.email || getField(fd, "email") || getField(fd, "email_address") || "—";
+  const source = s.source || getField(fd, "source") || getField(fd, "page_name") || "Website";
+  const message =
+    s.concern ||
+    s.message ||
+    getField(fd, "concern") ||
+    getField(fd, "message") ||
+    getField(fd, "comments") ||
+    getField(fd, "notes") ||
+    "—";
+
+  const createdRaw =
+    p.created_time || p.createdTime || p.createdAt || p.created_at || Date.now();
+  const createdTime = createdRaw ? new Date(createdRaw) : new Date();
+
+  const id = p.lead_id || p.id || p._id || p.leadId || "";
+  return { id, name, phone, email, source, message, createdTime };
+}
+
+/* ---------- Toast components (portal + animations) ---------- */
+function Toast({ toast, onClose, onAction, isExiting }) {
+  const tone =
+    toast.tone === "success"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+      : toast.tone === "warning"
+      ? "border-amber-300 bg-amber-50 text-amber-800"
+      : toast.tone === "error"
+      ? "border-red-300 bg-red-50 text-red-800"
+      : "border-indigo-300 bg-indigo-50 text-indigo-800";
+
+  const Icon =
+    toast.icon ||
+    (toast.tone === "success" ? FiCheckCircle : toast.tone === "warning" ? FiInfo : FiInfo);
+
+  return (
+    <div
+      className={`w-[380px] rounded-xl border p-4 shadow-lg ${tone} ${
+        isExiting ? "animate-toastOut" : "animate-toastIn"
+      } transition-all duration-300 transform`}
+      style={{
+        maxHeight: isExiting ? 0 : "500px",
+        opacity: isExiting ? 0 : 1,
+        marginBottom: isExiting ? 0 : "0.75rem",
+        overflow: "hidden",
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5">
+          <Icon className="text-lg" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold leading-5 truncate flex items-center gap-2">
+            {toast.title}
+            {toast.leadName && (
+              <span className="text-xs font-normal bg-black/10 px-2 py-0.5 rounded-full">
+                {toast.leadName}
+              </span>
+            )}
+          </div>
+          {toast.message ? (
+            <div className="text-sm opacity-90 mt-1 break-words">{toast.message}</div>
+          ) : null}
+
+          {toast.leadDetails && (
+            <div className="mt-3 pt-2 border-t border-current border-opacity-20">
+              <div className="space-y-1.5 text-xs">
+                {toast.leadDetails.phone && (
+                  <div className="flex items-center gap-2">
+                    <FiPhoneCall className="opacity-60" />
+                    <span>{formatPhoneNumber(toast.leadDetails.phone)}</span>
+                  </div>
+                )}
+                {toast.leadDetails.email && toast.leadDetails.email !== "—" && (
+                  <div className="flex items-center gap-2">
+                    <FiUser className="opacity-60" />
+                    <span className="truncate">{toast.leadDetails.email}</span>
+                  </div>
+                )}
+                {toast.leadDetails.source && (
+                  <div className="flex items-center gap-2">
+                    <FiInfo className="opacity-60" />
+                    <span>From: {toast.leadDetails.source}</span>
+                  </div>
+                )}
+                {toast.leadDetails.message && toast.leadDetails.message !== "—" && (
+                  <div className="flex items-center gap-2">
+                    <FiMessageSquare className="opacity-60" />
+                    <span className="line-clamp-2">{toast.leadDetails.message}</span>
+                  </div>
+                )}
+                {toast.leadDetails.time && (
+                  <div className="flex items-center gap-2 text-xs opacity-70">
+                    <FiCalendar className="opacity-60" />
+                    <span>{toast.leadDetails.time}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {toast.action ? (
+            <button
+              onClick={onAction}
+              className="mt-3 text-sm font-medium bg-black/10 hover:bg-black/20 px-3 py-1.5 rounded-md transition-colors"
+            >
+              {toast.action.label}
+            </button>
+          ) : null}
+        </div>
+        <button
+          onClick={onClose}
+          className="rounded-full p-1 hover:bg-black/10 transition"
+          aria-label="Close"
+          title="Close"
+        >
+          <FiX />
+        </button>
+      </div>
+    </div>
   );
-  const blob = new Blob([[headers.join(","), ...lines].join("\n")], {
-    type: "text/csv;charset=utf-8;",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+}
+
+function ToastPortal({ children }) {
+  if (typeof document === "undefined") return null;
+  return document.body ? createPortal(children, document.body) : null;
+}
+function ToastStack({ toasts, remove }) {
+  return (
+    <ToastPortal>
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col-reverse gap-3">
+        {toasts.map((t) => (
+          <Toast
+            key={t.id}
+            toast={t}
+            onClose={() => remove(t.id)}
+            onAction={() => {
+              if (typeof t.action?.onClick === "function") t.action.onClick();
+              remove(t.id);
+            }}
+            isExiting={t.isExiting}
+          />
+        ))}
+      </div>
+    </ToastPortal>
+  );
+}
+
+function useToasts() {
+  const [toasts, setToasts] = useState([]);
+  const remove = useCallback((id) => {
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, isExiting: true } : t)));
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 300);
+  }, []);
+  const push = useCallback(
+    (t) => {
+      const id =
+        (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
+        `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const timeout = t.timeout ?? 10000;
+      setToasts((prev) => [{ id, ...t }, ...prev]);
+      if (timeout > 0) setTimeout(() => remove(id), timeout);
+    },
+    [remove]
+  );
+  return { toasts, push, remove };
+}
+
+/* ---------------- socket helpers: dedupe + soft refresh + highlight ---------------- */
+const useEventDeduper = (windowMs = 8000) => {
+  const seenRef = useRef(new Map());
+  useEffect(() => {
+    const t = setInterval(() => {
+      const now = Date.now();
+      for (const [k, v] of seenRef.current.entries()) if (now - v > windowMs) seenRef.current.delete(k);
+    }, windowMs);
+    return () => clearInterval(t);
+  }, [windowMs]);
+
+  const seen = useCallback((key) => {
+    const k = String(key || "");
+    const now = Date.now();
+    const exists = seenRef.current.has(k);
+    seenRef.current.set(k, now);
+    return exists;
+  }, []);
+
+  return seen;
 };
 
-const isSameDay = (a, b) =>
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
-
-const inLastDays = (d, n) => {
-  const now = new Date();
-  const from = new Date(now);
-  from.setDate(now.getDate() - (n - 1));
-  from.setHours(0, 0, 0, 0);
-  const to = new Date(now);
-  to.setHours(23, 59, 59, 999);
-  return d >= from && d <= to;
-};
-
-const timeAgo = (date) => {
-  if (!date) return "—";
-  const s = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} hrs ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
+const useSoftRefresh = (setter) => {
+  const lastRef = useRef(0);
+  const inflightRef = useRef(false);
+  return useCallback(async () => {
+    const now = Date.now();
+    if (inflightRef.current || now - lastRef.current < 1200) return;
+    inflightRef.current = true;
+    try {
+      const all = await fetchAllLeads();
+      setter(all.leads || []);
+      lastRef.current = Date.now();
+    } finally {
+      inflightRef.current = false;
+    }
+  }, [setter]);
 };
 
 /* ------------------------ small UI helpers ------------------------ */
@@ -257,14 +440,18 @@ export default function LeadsManagement() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [callers, setCallers] = useState([]);
+  const { socket, isConnected } = useSocket();
+  const { toasts, push, remove } = useToasts();
+
   usePageTitle("Leads Management", "Manage your leads effectively");
-  // filters (with custom range)
-  const [dateMode, setDateMode] = useState("7d"); // Today | Yesterday | 7d | 30d | All | Custom
+
+  // filters
+  const [dateMode, setDateMode] = useState("7d");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
   const [source, setSource] = useState("All Sources");
-  const [callerFilter, setCallerFilter] = useState("All Callers"); // All Callers | Unassigned | userId
+  const [callerFilter, setCallerFilter] = useState("All Callers");
   const [leadStatus, setLeadStatus] = useState("Lead Status");
   const [opdStatus, setOpdStatus] = useState("OPD Status");
   const [ipdStatus, setIpdStatus] = useState("IPD Status");
@@ -278,6 +465,23 @@ export default function LeadsManagement() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const headerCheckboxRef = useRef(null);
+
+  // highlight map for row flash
+  const [highlight, setHighlight] = useState(() => new Set());
+  const addHighlight = useCallback((id) => {
+    if (!id) return;
+    setHighlight((prev) => new Set(prev).add(String(id)));
+    setTimeout(() => {
+      setHighlight((prev) => {
+        const n = new Set(prev);
+        n.delete(String(id));
+        return n;
+      });
+    }, 2500);
+  }, []);
+
+  const softRefresh = useSoftRefresh(setRows);
+  const dedupe = useEventDeduper(8000);
 
   // load data
   useEffect(() => {
@@ -299,6 +503,156 @@ export default function LeadsManagement() {
       mounted = false;
     };
   }, []);
+
+  // notify helper
+  const notify = useCallback(
+    (title, message, opts = {}) => {
+      const withTime = (t) => (t instanceof Date && !isNaN(t) ? t.toLocaleTimeString() : "Just now");
+      push({
+        title,
+        message,
+        icon: opts.icon || FiBell,
+        tone: opts.tone || "info",
+        timeout: opts.timeout ?? 10000,
+        leadName: opts.leadName,
+        leadDetails: opts.leadDetails && {
+          ...opts.leadDetails,
+          time: opts.leadDetails.time || withTime(new Date()),
+        },
+        action: opts.action, // optional
+      });
+    },
+    [push]
+  );
+
+  // socket listeners
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    const upsertFromSocket = (payload) => {
+      const minimal = socketPayloadToLead(payload);
+      const incomingId = String(minimal._id || minimal.id || minimal.leadId || "");
+
+      setRows((prev) => {
+        const idx = prev.findIndex((r) => String(r._id || r.id || r.leadId) === incomingId);
+        if (idx >= 0) {
+          const next = prev.slice();
+          next[idx] = { ...next[idx], ...minimal, fieldData: minimal.fieldData || next[idx].fieldData };
+          return next;
+        }
+        return [{ ...minimal }, ...prev];
+      });
+
+      addHighlight(incomingId);
+      softRefresh();
+    };
+
+    const onLeadIntake = (p = {}) => {
+      const s = summarizeSocketLead(p);
+      if (dedupe(`lead:intake:${s.id}`)) return;
+      upsertFromSocket(p);
+      notify("New web lead", "A new lead submitted through the website.", {
+        tone: "success",
+        leadName: s.name,
+        leadDetails: {
+          phone: s.phone,
+          email: s.email,
+          source: s.source,
+          message: s.message,
+          time: s.createdTime?.toLocaleTimeString(),
+        },
+      });
+    };
+
+    const onLeadCreated = (p = {}) => {
+      const s = summarizeSocketLead(p);
+      if (dedupe(`lead:created:${s.id}`)) return;
+      upsertFromSocket(p);
+      notify("New lead created", "A new lead has been added to the system.", {
+        leadName: s.name,
+        leadDetails: {
+          phone: s.phone,
+          email: s.email,
+          source: s.source,
+          message: s.message,
+          time: s.createdTime?.toLocaleTimeString(),
+        },
+      });
+    };
+
+    const onLeadUpdated = (p = {}) => {
+      const s = summarizeSocketLead(p);
+      if (dedupe(`lead:updated:${s.id}:${p.updatedAt || ""}`)) return;
+      upsertFromSocket(p);
+      notify("Lead updated", "Lead details were updated.", {
+        icon: FiInfo,
+        leadName: s.name,
+        leadDetails: { phone: s.phone },
+      });
+    };
+
+    const onStatusUpdated = (p = {}) => {
+      const s = summarizeSocketLead(p);
+      if (dedupe(`lead:status_updated:${s.id}:${p.status || ""}`)) return;
+      upsertFromSocket({ ...(p.lead || {}), _id: s.id, status: p.status });
+      notify("Lead status changed", `Status updated to: ${p?.status || "updated"}.`, {
+        icon: FiInfo,
+        leadName: s.name,
+      });
+    };
+
+    const onActivity = (p = {}) => {
+      const s = summarizeSocketLead(p);
+      const act = p?.activity?._id || p?.activity?.action || "";
+      if (dedupe(`lead:activity:${s.id}:${act}`)) return;
+      softRefresh();
+      addHighlight(s.id);
+      notify("Lead activity", `${p?.activity?.action || "Activity"} recorded.`, {
+        leadName: s.name || `Lead #${s.id}`,
+      });
+    };
+
+    const onCallLogged = (p = {}) => {
+      const id = p?.lead?.id || p?.leadId || "";
+      if (dedupe(`call:logged:${id}:${p?.call?._id || ""}`)) return;
+      softRefresh();
+      addHighlight(id);
+      notify("Call logged", `Call outcome: ${p?.call?.outcome || "completed"}.`, {
+        icon: FiPhoneCall,
+        tone: "success",
+      });
+    };
+
+    const onLeadsAssigned = (p = {}) => {
+      const key = Array.isArray(p?.leadIds) ? p.leadIds.join(",") : String(p?.leadIds || "");
+      if (dedupe(`leads:assigned:${key}`)) return;
+      softRefresh();
+      (Array.isArray(p?.leadIds) ? p.leadIds : [p?.leadIds]).forEach((lid) => lid && addHighlight(lid));
+      const n = Array.isArray(p?.leadIds) ? p.leadIds.length : 1;
+      notify("Leads assigned", `${n} lead(s) assigned to a caller.`, { icon: FiInfo });
+    };
+
+    socket.on?.("lead:intake", onLeadIntake);
+    socket.on?.("lead:created", onLeadCreated);
+    socket.on?.("lead:updated", onLeadUpdated);
+    socket.on?.("lead:status_updated", onStatusUpdated);
+    socket.on?.("lead:activity", onActivity);
+    socket.on?.("call:logged", onCallLogged);
+    socket.on?.("leads:assigned", onLeadsAssigned);
+
+    // Optional: connected toast
+    notify("Connected", "Live updates are active.", { tone: "success", timeout: 2500 });
+
+    return () => {
+      socket.off?.("lead:intake", onLeadIntake);
+      socket.off?.("lead:created", onLeadCreated);
+      socket.off?.("lead:updated", onLeadUpdated);
+      socket.off?.("lead:status_updated", onStatusUpdated);
+      socket.off?.("lead:activity", onActivity);
+      socket.off?.("call:logged", onCallLogged);
+      socket.off?.("leads:assigned", onLeadsAssigned);
+    };
+  }, [socket, isConnected, dedupe, softRefresh, addHighlight, notify]);
 
   // parsed & maps
   const leads = useMemo(() => rows.map(parseLead), [rows]);
@@ -342,10 +696,21 @@ export default function LeadsManagement() {
   }, [callers]);
 
   // filtering
+  const isSameDay = (a, b) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+  const inLastDays = (d, n) => {
+    const now = new Date();
+    const from = new Date(now);
+    from.setDate(now.getDate() - (n - 1));
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(now);
+    to.setHours(23, 59, 59, 999);
+    return d >= from && d <= to;
+  };
+
   const filtered = useMemo(() => {
     let list = [...leads];
-
-    // date range
     const now = new Date();
     if (dateMode === "Today") list = list.filter((l) => l.createdTime && isSameDay(l.createdTime, now));
     else if (dateMode === "Yesterday") {
@@ -360,7 +725,6 @@ export default function LeadsManagement() {
       list = list.filter((l) => l.createdTime && l.createdTime >= from && l.createdTime <= to);
     }
 
-    // search
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -371,7 +735,6 @@ export default function LeadsManagement() {
       );
     }
 
-    // categorical filters
     if (source !== "All Sources") list = list.filter((l) => l.source === source);
     if (leadStatus !== "Lead Status") list = list.filter((l) => l.leadStatus === leadStatus);
     if (opdStatus !== "OPD Status") list = list.filter((l) => l.opdStatus === opdStatus);
@@ -401,7 +764,11 @@ export default function LeadsManagement() {
   ]);
 
   // pagination + header checkbox for current page
-  useEffect(() => setPage(1), [dateMode, customFrom, customTo, source, callerFilter, leadStatus, opdStatus, ipdStatus, diagnostics, search, pageSize]);
+  useEffect(
+    () =>
+      setPage(1),
+    [dateMode, customFrom, customTo, source, callerFilter, leadStatus, opdStatus, ipdStatus, diagnostics, search, pageSize]
+  );
 
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -460,7 +827,7 @@ export default function LeadsManagement() {
     }
   };
 
-  // smart assign (round-robin by current load)
+  // smart assign (round-robin)
   const smartAssign = async () => {
     if (selected.size === 0 || callers.length === 0) return;
     try {
@@ -498,7 +865,6 @@ export default function LeadsManagement() {
     setSearch("");
   };
 
-  // badge helpers
   const Pill = ({ text, tone }) => {
     const cls =
       tone === "red"
@@ -541,8 +907,7 @@ export default function LeadsManagement() {
   /* ----------------------------- UI ----------------------------- */
   return (
     <div className="space-y-4">
- 
-      {/* Toolbar — now includes Reset + Custom Date */}
+      {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         {/* Date filter with Custom Range */}
         <FilterDropdown
@@ -569,7 +934,6 @@ export default function LeadsManagement() {
                     setDateMode(v);
                     if (v !== "Custom") close();
                   }}
-                 
                   className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
                     dateMode === v ? "font-semibold text-[#3b0d66]" : ""
                   }`}
@@ -638,9 +1002,7 @@ export default function LeadsManagement() {
         {/* All Callers */}
         <FilterDropdown
           label=""
-          valueLabel={
-            ([...callerOptions].find((o) => o.id === callerFilter)?.name) || "All Callers"
-          }
+          valueLabel={([...callerOptions].find((o) => o.id === callerFilter)?.name) || "All Callers"}
         >
           {(close) => (
             <div className="max-h-72 overflow-auto">
@@ -747,9 +1109,7 @@ export default function LeadsManagement() {
           )}
         </FilterDropdown>
 
-      
-
-        {/* Reset Filters (new) */}
+        {/* Reset */}
         <button
           onClick={resetFilters}
           className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
@@ -757,8 +1117,8 @@ export default function LeadsManagement() {
         >
           Reset Filters
         </button>
-      </div>
-  {/* Search */}
+
+        {/* Search */}
         <div className="ml-auto relative">
           <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -768,9 +1128,10 @@ export default function LeadsManagement() {
             className="w-72 rounded-xl border border-gray-200 bg-white pl-9 pr-3 py-2 text-sm outline-none focus:border-violet-400"
           />
         </div>
+      </div>
+
       {/* Table */}
       <section className="rounded-2xl p-8 bg-white ring-1 ring-gray-200 shadow-sm overflow-hidden">
-   
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className=" text-gray-600">
@@ -806,21 +1167,37 @@ export default function LeadsManagement() {
                       .join("")
                       .toUpperCase()
                   : "—";
+                const isHot = highlight.has(l.id);
+                const timeAgo = (date) => {
+                  if (!date) return "—";
+                  const s = Math.floor((Date.now() - date.getTime()) / 1000);
+                  if (s < 60) return `${s}s ago`;
+                  const m = Math.floor(s / 60);
+                  if (m < 60) return `${m} min ago`;
+                  const h = Math.floor(m / 60);
+                  if (h < 24) return `${h} hrs ago`;
+                  const d = Math.floor(h / 24);
+                  return `${d}d ago`;
+                };
+
                 return (
-                  <tr key={l.id} className="border-b last:border-b-0 border-[#ccc] hover:bg-gray-50/50">
+                  <tr
+                    key={l.id}
+                    className={`border-b last:border-b-0 border-[#ccc] hover:bg-gray-50/50 ${
+                      isHot ? "animate-rowFlash" : ""
+                    }`}
+                  >
                     <td className="px-4 py-4">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(l.id)}
-                        onChange={() => toggleOne(l.id)}
-                      />
+                      <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleOne(l.id)} />
                     </td>
                     <td className="px-4 py-4 font-medium">{l.name}</td>
                     <td className="px-4 py-4 text-gray-700">{l.phone}</td>
                     <td className="px-4 py-4">
                       <span className="inline-flex items-center gap-2 text-gray-700">
                         {l.source.toLowerCase().includes("meta") && (
-                          <span className="text-[#1877F2]"><FaFacebook /></span>
+                          <span className="text-[#1877F2]">
+                            <FaFacebook />
+                          </span>
                         )}
                         {l.source}
                       </span>
@@ -886,7 +1263,44 @@ export default function LeadsManagement() {
 
           <div className="ml-auto flex items-center gap-2">
             <button
-              onClick={() => exportCsv(filtered, "leads.csv")}
+              onClick={() => {
+                const rowsToExport = filtered;
+                const headers = [
+                  "Lead Name",
+                  "Phone",
+                  "Source",
+                  "Lead Status",
+                  "OPD Status",
+                  "IPD Status",
+                  "Diagnostic/Non",
+                  "AssignedTo",
+                  "Last Update",
+                ];
+                const lines = rowsToExport.map((r) =>
+                  [
+                    r.name,
+                    r.phone,
+                    r.source,
+                    r.leadStatus,
+                    r.opdStatus,
+                    r.ipdStatus,
+                    r.diagnostic,
+                    r.assignedTo || "Unassigned",
+                    r.createdTime ? r.createdTime.toISOString() : "",
+                  ]
+                    .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
+                    .join(",")
+                );
+                const blob = new Blob([[headers.join(","), ...lines].join("\n")], {
+                  type: "text/csv;charset=utf-8;",
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "leads.csv";
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
               className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
             >
               <FiUpload /> Export
@@ -978,6 +1392,33 @@ export default function LeadsManagement() {
         onClose={() => setSuccessOpen(false)}
         text={successText}
       />
+
+      {/* Toasts (socket popups) */}
+      <ToastStack toasts={toasts} remove={remove} />
+
+      {/* Row flash + Toast animations */}
+      <style>{`
+        @keyframes rowFlash {
+          0% { background-color: #f0ecff; }
+          100% { background-color: transparent; }
+        }
+        .animate-rowFlash { animation: rowFlash .8s ease-out 0s 1; }
+
+        @keyframes toastIn {
+          0% { transform: translateX(100%); opacity: 0; }
+          100% { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes toastOut {
+          0% { transform: translateX(0); opacity: 1; max-height: 500px; margin-bottom: 0.75rem; }
+          50% { opacity: 0; }
+          100% { transform: translateX(100%); opacity: 0; max-height: 0; margin-bottom: 0; }
+        }
+        .animate-toastIn { animation: toastIn 0.3s ease-out forwards; }
+        .animate-toastOut { animation: toastOut 0.3s ease-in forwards; }
+        .line-clamp-2 {
+          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+      `}</style>
     </div>
   );
 }

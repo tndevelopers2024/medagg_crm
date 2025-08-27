@@ -14,7 +14,10 @@ export {
  * ----------------------------------------- */
 export const BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
-  "https://medagg.online/api/v1";
+  (window.location.hostname === "localhost"
+    ? "http://localhost:5000/api/v1"
+    : "https://medagg.online/api/v1");
+
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -121,17 +124,19 @@ export const LEAD_STATUSES = [
   "converted",
 ];
 
-export const CALL_OUTCOMES = [
-  "connected",
-  "interested",
-  "not_interested",
-  "converted",
-  "no_answer",
-  "busy",
-  "switched_off",
-  "callback",
-  "voicemail",
-];
+ export const CALL_OUTCOMES = [
+   "connected",
+   "interested",
+   "not_interested",
+   "converted",
+   "no_answer",
+   "busy",
+   "switched_off",
+   "callback",
+   "voicemail",
+   "wrong_number",
+   "do_not_disturb",
+ ];
 
 export const BOOKING_STATUSES = ["pending", "booked", "done", "cancelled"];
 
@@ -290,7 +295,7 @@ export const assignLeadsToCaller = async (leadIds = [], callerId) => {
  */
 export const fetchMyAssignedLeads = async (params = {}) => {
   try {
-    const { data } = await api.get("/leads/assigned", { params });
+    const { data } = await api.get("/caller/leads/assigned", { params });
     const rows = data?.data || data?.leads || [];
     return {
       page: Number(data?.page ?? params.page ?? 1),
@@ -300,8 +305,8 @@ export const fetchMyAssignedLeads = async (params = {}) => {
     };
   } catch (err) {
     if (err?.response?.status === 404) {
-      // backward compatible with older /caller prefix
-      const { data } = await api.get("/caller/leads/assigned", { params });
+      // optional fallback if you later add /leads/assigned
+      const { data } = await api.get("/leads/assigned", { params });
       const rows = data?.data || [];
       return {
         page: Number(data?.page ?? params.page ?? 1),

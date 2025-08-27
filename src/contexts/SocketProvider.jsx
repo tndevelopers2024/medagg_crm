@@ -1,45 +1,50 @@
 // src/contexts/SocketContext.jsx
-import { createContext, useContext, useEffect, useState } from 'react';
-import { initializeSocket, getSocket, disconnectSocket } from '../utils/socket';
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  initializeSocket,
+  connectSocket,
+  getSocket,
+  setSocketToken,
+} from "../utils/socket";
 
-const SocketContext = createContext();
+const SocketContext = createContext({ socket: null, isConnected: false });
 
 export const SocketProvider = ({ children }) => {
-  const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    
-    if (token) {
-      const socketInstance = initializeSocket();
-      setSocket(socketInstance);
+    const s = initializeSocket();
 
-      socketInstance.on('connect', () => {
-        setIsConnected(true);
-        console.log('Socket connected');
-      });
+    const onConnect = () => {
+      setIsConnected(true);
+      // sanity check: ask server who am i & what rooms
+      s.emit("whoami", (info) => console.log("[socket] whoami", info));
+    };
+    const onDisconnect = () => setIsConnected(false);
 
-      socketInstance.on('disconnect', () => {
-        setIsConnected(false);
-        console.log('Socket disconnected');
-      });
+    s.on("connect", onConnect);
+    s.on("disconnect", onDisconnect);
 
-      socketInstance.connect();
+    // Explicit connect (reads token from localStorage by default)
+    connectSocket();
 
-      return () => {
-        socketInstance.off('connect');
-        socketInstance.off('disconnect');
-        disconnectSocket();
-      };
-    }
+    return () => {
+      s.off("connect", onConnect);
+      s.off("disconnect", onDisconnect);
+    };
   }, []);
 
-  return (
-    <SocketContext.Provider value={{ socket, isConnected }}>
-      {children}
-    </SocketContext.Provider>
+  const value = useMemo(
+    () => ({
+      socket: getSocket(),
+      isConnected,
+      reconnectWithToken: (token) => connectSocket(token),
+      setSocketToken,
+    }),
+    [isConnected]
   );
+
+  return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
 };
 
 export const useSocket = () => useContext(SocketContext);

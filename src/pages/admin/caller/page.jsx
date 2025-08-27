@@ -1,5 +1,5 @@
 // src/pages/CallerDashboard.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   FiArrowUpRight,
@@ -11,9 +11,130 @@ import {
   FiXCircle,
   FiCalendar,
   FiTarget,
+  FiBell,
+  FiPhoneCall,
+  FiInfo,
+  FiX,
 } from "react-icons/fi";
 import { getAllUsers, fetchAllLeads } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
+import { useSocket } from "../../../contexts/SocketProvider";
+import { createPortal } from "react-dom";
+
+/* ------------ tiny toast system (socket popups) ------------ */
+function Toast({ toast, onClose, onAction, isExiting }) {
+  const tone =
+    toast.tone === "success"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+      : toast.tone === "warning"
+      ? "border-amber-300 bg-amber-50 text-amber-800"
+      : toast.tone === "error"
+      ? "border-red-300 bg-red-50 text-red-800"
+      : "border-indigo-300 bg-indigo-50 text-indigo-800";
+
+  const Icon = toast.icon || FiBell;
+  return (
+    <div
+      className={`w-[360px] rounded-xl border p-4 shadow-lg ${tone} ${
+        isExiting ? "animate-toastOut" : "animate-toastIn"
+      } transition-all duration-300`}
+      style={{
+        maxHeight: isExiting ? 0 : "500px",
+        opacity: isExiting ? 0 : 1,
+        marginBottom: isExiting ? 0 : "0.75rem",
+        overflow: "hidden",
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <Icon className="mt-0.5 text-lg" />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold leading-5 truncate">{toast.title}</div>
+          {toast.message ? (
+            <div className="text-sm opacity-90 mt-1 break-words">{toast.message}</div>
+          ) : null}
+          {toast.action ? (
+            <button
+              onClick={onAction}
+              className="mt-3 text-sm font-medium bg-black/10 hover:bg-black/20 px-3 py-1.5 rounded-md transition-colors"
+            >
+              {toast.action.label}
+            </button>
+          ) : null}
+        </div>
+        <button
+          onClick={onClose}
+          className="rounded-full p-1 hover:bg-black/10 transition"
+          aria-label="Close"
+          title="Close"
+        >
+          <FiX />
+        </button>
+      </div>
+    </div>
+  );
+}
+function ToastPortal({ children }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(children, document.body);
+}
+function ToastStack({ toasts, remove }) {
+  return (
+    <ToastPortal>
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col-reverse gap-3">
+        {toasts.map((t) => (
+          <Toast
+            key={t.id}
+            toast={t}
+            onClose={() => remove(t.id)}
+            onAction={() => {
+              if (typeof t.action?.onClick === "function") t.action.onClick();
+              remove(t.id);
+            }}
+            isExiting={t.isExiting}
+          />
+        ))}
+      </div>
+    </ToastPortal>
+  );
+}
+function useToasts() {
+  const [toasts, setToasts] = useState([]);
+  const remove = useCallback((id) => {
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, isExiting: true } : t)));
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 300);
+  }, []);
+  const push = useCallback(
+    (t) => {
+      const id =
+        (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
+        `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const timeout = t.timeout ?? 6000;
+      setToasts((prev) => [{ id, ...t }, ...prev]);
+      if (timeout > 0) setTimeout(() => remove(id), timeout);
+    },
+    [remove]
+  );
+  return { toasts, push, remove };
+}
+function useEventDeduper(windowMs = 8000) {
+  const seenRef = useRef(new Map());
+  useEffect(() => {
+    const t = setInterval(() => {
+      const now = Date.now();
+      for (const [k, v] of seenRef.current.entries()) {
+        if (now - v > windowMs) seenRef.current.delete(k);
+      }
+    }, windowMs);
+    return () => clearInterval(t);
+  }, [windowMs]);
+  return useCallback((key) => {
+    const k = String(key || "");
+    const now = Date.now();
+    const has = seenRef.current.has(k);
+    seenRef.current.set(k, now);
+    return has;
+  }, []);
+}
 
 /* ------------ helpers ------------ */
 const dicebear = (seed) =>
@@ -96,9 +217,6 @@ const pill = (tone) =>
     : "bg-gray-50 text-gray-700 ring-gray-200";
 
 const toneLead = (v) => (/hot/i.test(v) ? "red" : /prospect/i.test(v) ? "blue" : "gray");
-const toneOPD = (v) =>
-  /booked/i.test(v) ? "blue" : /done|completed/i.test(v) ? "green" : /cancel/i.test(v) ? "red" : "gray";
-const toneIPD = (v) => (/done|admission/i.test(v) ? "green" : "gray");
 
 /* period ranges */
 const startOfMonth = (offset = 0) => {
@@ -137,22 +255,36 @@ export default function CallerDashboard() {
   const [caller, setCaller] = useState(null);
   const [allLeads, setAllLeads] = useState([]);
 
+  // presence + live activity
+  const [isOnline, setIsOnline] = useState(false);
+  const [lastSeen, setLastSeen] = useState(null); // Date | null
+  const [liveActivity, setLiveActivity] = useState([]); // [{when, title, tags, note}]
+  const seenPresenceRef = useRef(0);
+
+  // period filter
   const [period, setPeriod] = useState("This Month"); // This Month | Last Month | This Week | All Time | Custom
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+
+  // socket + toasts
+  const { socket, isConnected } = useSocket();
+  const { toasts, push, remove } = useToasts();
+  const dedupe = useEventDeduper(7000);
+
+  // Initial fetch
+  const softRefresh = useCallback(async () => {
+    const [users, leadsRes] = await Promise.all([getAllUsers(), fetchAllLeads()]);
+    const u = (users || []).find((x) => x.id === id || x._id === id);
+    setCaller(u || { id, name: "Unknown", email: "", phone: "", role: "caller", state: "" });
+    setAllLeads((leadsRes?.leads || []).map(parseLead));
+  }, [id]);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         setLoading(true);
-        const [users, leadsRes] = await Promise.all([getAllUsers(), fetchAllLeads()]);
-        if (!mounted) return;
-        const u = (users || []).find((x) => x.id === id || x._id === id);
-        setCaller(
-          u || { id, name: "Unknown", email: "", phone: "", role: "caller", state: "" }
-        );
-        setAllLeads((leadsRes?.leads || []).map(parseLead));
+        await softRefresh();
       } finally {
         if (mounted) setLoading(false);
       }
@@ -160,9 +292,9 @@ export default function CallerDashboard() {
     return () => {
       mounted = false;
     };
-  }, [id]);
+  }, [softRefresh]);
 
-  const assigned = useMemo(() => allLeads.filter((l) => l.assignedTo === id), [allLeads, id]);
+  const assigned = useMemo(() => allLeads.filter((l) => String(l.assignedTo) === String(id)), [allLeads, id]);
 
   /* period filtering */
   const [from, to] = useMemo(() => {
@@ -207,20 +339,16 @@ export default function CallerDashboard() {
   );
 
   const metric = (fn) => ({ cur: inThis.filter(fn).length, prev: inPrev.filter(fn).length });
-  const pct = (cur, prev) => (!prev && !cur ? 0 : !prev ? 100 : Math.round(((cur - prev) / prev) * 100));
-
-  /* KPIs */
+  const monthlyTarget = 20;
   const mTotal = metric(() => true);
   const mOPBooked = metric((l) => /booked/i.test(l.opd));
   const mOPDone = metric((l) => /done|completed/i.test(l.opd));
   const mOPCancel = metric((l) => /cancel/i.test(l.opd));
   const mIPDDone = metric((l) => /done|admission/i.test(l.ipd));
-
-  const monthlyTarget = 20;
   const targetProgress = Math.min(100, Math.round((mTotal.cur / monthlyTarget) * 100));
 
-  /* timeline */
-  const timeline = useMemo(() => {
+  /* derived timeline (from lead data) */
+  const derivedTimeline = useMemo(() => {
     return assigned
       .map((l) => ({
         when: l.lastUpdate || l.createdAt,
@@ -236,6 +364,22 @@ export default function CallerDashboard() {
       .sort((a, b) => b.when - a.when)
       .slice(0, 10);
   }, [assigned]);
+
+  /* merge live + derived for display (live first) */
+  const timeline = useMemo(() => {
+    const all = [...liveActivity, ...derivedTimeline];
+    // de-dupe by (title+when)
+    const seen = new Set();
+    const out = [];
+    for (const t of all) {
+      const key = `${t.title}__${t.when ? +new Date(t.when) : ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+      if (out.length >= 20) break;
+    }
+    return out.sort((a, b) => (b.when || 0) - (a.when || 0));
+  }, [liveActivity, derivedTimeline]);
 
   /* export */
   const exportCsv = () => {
@@ -278,14 +422,167 @@ export default function CallerDashboard() {
     URL.revokeObjectURL(url);
   };
 
+  /* ------- socket presence + live events ------- */
+  // Helper to push a live item (and cap list)
+  const pushLive = useCallback((evt) => {
+    setLiveActivity((prev) => {
+      const next = [{ ...evt }, ...prev];
+      return next.slice(0, 40);
+    });
+  }, []);
+
+  // Small refresh guard (avoid spamming API)
+  const lastRefreshRef = useRef(0);
+  const inflightRef = useRef(false);
+  const throttledRefresh = useCallback(async () => {
+    const now = Date.now();
+    if (inflightRef.current || now - lastRefreshRef.current < 1200) return;
+    inflightRef.current = true;
+    try {
+      const leadsRes = await fetchAllLeads();
+      setAllLeads((leadsRes?.leads || []).map(parseLead));
+      lastRefreshRef.current = Date.now();
+    } catch (e) {
+      console.warn("throttledRefresh error:", e?.message || e);
+    } finally {
+      inflightRef.current = false;
+    }
+  }, []);
+
+  // Presence “staleness”: if no presence ping in 45s, mark offline
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (!lastSeen) return;
+      const age = Date.now() - +lastSeen;
+      if (age > 45000 && isOnline) setIsOnline(false);
+    }, 5000);
+    return () => clearInterval(t);
+  }, [isOnline, lastSeen]);
+
+  // Wire socket events
+  useEffect(() => {
+    if (!socket || !isConnected || !id) return;
+
+    // Presence from backend:
+    // Expect payload: { userId, online, lastSeen }
+    const onPresence = (p = {}) => {
+      if (String(p.userId) !== String(id)) return;
+      // prevent flicker if duplicate
+      const dupKey = `presence:${id}:${p.online ? "1" : "0"}:${p.lastSeen || ""}`;
+      if (dedupe(dupKey)) return;
+      setIsOnline(!!p.online);
+      const seen = p.lastSeen ? new Date(p.lastSeen) : new Date();
+      setLastSeen(seen);
+      seenPresenceRef.current = Date.now();
+    };
+
+    // A lead was newly assigned to this caller
+    // Expect payload: { leadId, callerId, by, at }
+    const onLeadAssigned = (p = {}) => {
+      if (String(p.callerId) !== String(id)) return;
+      const key = `assign:${p.leadId || ""}:${p.at || ""}`;
+      if (dedupe(key)) return;
+      push({
+        title: "New lead assigned",
+        message: `Lead ${p.leadName || p.leadId} was assigned to ${caller?.name || "caller"}.`,
+        icon: FiBell,
+        tone: "success",
+        action: { label: "Refresh", onClick: throttledRefresh },
+      });
+      pushLive({
+        when: p.at ? new Date(p.at) : new Date(),
+        title: `Lead assigned: ${p.leadName || p.leadId || ""}`,
+        tags: ["Assigned"],
+        note: p.by ? `By ${p.by.name || p.by.email || "system"}` : "",
+      });
+      throttledRefresh();
+    };
+
+    // Any update to leads owned by this caller
+    // Expect payload: { leadId, callerId, fields, at }
+    const onLeadUpdated = (p = {}) => {
+      if (String(p.callerId) !== String(id)) return;
+      const key = `leadupd:${p.leadId || ""}:${p.at || ""}`;
+      if (dedupe(key)) return;
+      push({
+        title: "Lead updated",
+        message: `Lead ${p.leadName || p.leadId} has new changes.`,
+        icon: FiInfo,
+        action: { label: "Refresh", onClick: throttledRefresh },
+      });
+      pushLive({
+        when: p.at ? new Date(p.at) : new Date(),
+        title: `Lead updated: ${p.leadName || p.leadId || ""}`,
+        tags: ["Update"],
+        note: "",
+      });
+      throttledRefresh();
+    };
+
+    // Calls logged by this caller
+    // Expect payload: { callerId, leadId, outcome, durationSec, at }
+    const onCallLogged = (p = {}) => {
+      if (String(p.callerId) !== String(id)) return;
+      const key = `call:${p.leadId || ""}:${p.at || ""}`;
+      if (dedupe(key)) return;
+      push({
+        title: "Call logged",
+        message: `${p.outcome || "Call recorded"} — ${Math.round((p.durationSec || 0) / 60)} min`,
+        icon: FiPhoneCall,
+        tone: "success",
+        action: { label: "Refresh", onClick: throttledRefresh },
+      });
+      pushLive({
+        when: p.at ? new Date(p.at) : new Date(),
+        title: `Call with ${p.leadName || p.leadId || ""}`,
+        tags: [p.outcome || "Call"],
+        note: p.durationSec ? `${Math.round(p.durationSec / 60)} min` : "",
+      });
+      throttledRefresh();
+    };
+
+    // Hook up
+    socket.on?.("caller:presence", onPresence);
+    socket.on?.("lead:assigned", onLeadAssigned);
+    socket.on?.("lead:updated", onLeadUpdated);
+    socket.on?.("call:logged", onCallLogged);
+
+    // Ask server for current presence snapshot (optional; ignore if server doesn’t support)
+    try {
+      socket.emit?.("caller:presence:request", { userId: id });
+    } catch {}
+
+    // Friendly connected toast
+    push({
+      title: "Live updates ready",
+      message: "You’ll see real-time changes for this caller.",
+      icon: FiBell,
+      tone: "success",
+      timeout: 2200,
+    });
+
+    return () => {
+      socket.off?.("caller:presence", onPresence);
+      socket.off?.("lead:assigned", onLeadAssigned);
+      socket.off?.("lead:updated", onLeadUpdated);
+      socket.off?.("call:logged", onCallLogged);
+    };
+  }, [socket, isConnected, id, caller?.name, push, dedupe, throttledRefresh, pushLive]);
+
+  /* ------------ UI ------------ */
   if (loading) return <div className="p-6">Loading…</div>;
   if (!caller) return <div className="p-6">Caller not found.</div>;
+
+  const lastSeenLabel = isOnline
+    ? "Active"
+    : lastSeen
+    ? `Last seen ${timeAgo(lastSeen)}`
+    : "Offline";
 
   return (
     <div className="space-y-6">
       {/* page topbar mimic (Export / Admin Actions) */}
       <div className="flex items-center justify-end">
-     
         <div className="flex items-center gap-2">
           <button
             onClick={exportCsv}
@@ -310,24 +607,37 @@ export default function CallerDashboard() {
             />
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg md:text-xl font-semibold text-[#3b0d66]">{caller.name}</h2>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active
+                <h2 className="text-lg md:text-xl font-semibold text-[#3b0d66]">
+                  {caller.name}
+                </h2>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
+                    isOnline
+                      ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                      : "bg-gray-50 text-gray-700 ring-gray-200"
+                  }`}
+                  title={lastSeenLabel}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      isOnline ? "bg-emerald-500" : "bg-gray-400"
+                    }`}
+                  />
+                  {lastSeenLabel}
                 </span>
               </div>
               <div className="mt-2 text-xs text-gray-600 space-x-3">
                 {caller.state && <span>📍 {caller.state}</span>}
                 {caller.phone && <span>📞 {caller.phone}</span>}
-                
               </div>
               <span className="inline-flex mt-4 items-center gap-1">
-                  <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-violet-200">
-                    GPE
-                  </span>
-                  <span className="rounded-full bg-pink-50 px-1.5 py-0.5 text-[10px] font-semibold text-pink-700 ring-1 ring-pink-200">
-                    PPC
-                  </span>
+                <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-violet-200">
+                  GPE
                 </span>
+                <span className="rounded-full bg-pink-50 px-1.5 py-0.5 text-[10px] font-semibold text-pink-700 ring-1 ring-pink-200">
+                  PPC
+                </span>
+              </span>
             </div>
           </div>
 
@@ -399,7 +709,7 @@ export default function CallerDashboard() {
             m={mTotal}
             Icon={FiCalendar}
             iconTone="amber"
-            sub="This month"
+            sub="This period"
           />
           <KpiCard
             title="OP Booked"
@@ -407,7 +717,7 @@ export default function CallerDashboard() {
             tone="green"
             Icon={FiCalendar}
             iconTone="indigo"
-            sub="This month"
+            sub="This period"
           />
           <KpiCard
             title="OPD Done"
@@ -415,7 +725,7 @@ export default function CallerDashboard() {
             tone="green"
             Icon={FiCheckCircle}
             iconTone="green"
-            sub="This month"
+            sub="This period"
           />
           <KpiCard
             title="OPD Cancelled"
@@ -423,7 +733,7 @@ export default function CallerDashboard() {
             tone="red"
             Icon={FiXCircle}
             iconTone="red"
-            sub="This month"
+            sub="This period"
           />
           <KpiCard
             title="IPD Done"
@@ -432,23 +742,23 @@ export default function CallerDashboard() {
             Icon={FiCheckCircle}
             iconTone="green"
             className="sm:col-span-2 xl:col-span-1"
-            sub="This month"
+            sub="This period"
           />
         </div>
       </section>
 
-<div className="px-2 pt-4 flex items-center justify-between">
-          <h3 className="font-semibold text-2xl">Assigned Leads</h3>
-          <button
-            onClick={() => navigate(`/admin/leads?callerId=${encodeURIComponent(id)}`)}
-            className="text-xs text-[#7d3bd6] hover:underline"
-          >
-            Show All <FiChevronDown className="inline-block -rotate-90" />
-          </button>
-        </div>
+      <div className="px-2 pt-4 flex items-center justify-between">
+        <h3 className="font-semibold text-2xl">Assigned Leads</h3>
+        <button
+          onClick={() => navigate(`/admin/leads?callerId=${encodeURIComponent(id)}`)}
+          className="text-xs text-[#7d3bd6] hover:underline"
+        >
+          Show All <FiChevronDown className="inline-block -rotate-90" />
+        </button>
+      </div>
+
       {/* Assigned leads */}
       <section className="rounded-2xl bg-white p-8 shadow-sm">
-        
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className=" text-gray-600">
@@ -526,17 +836,17 @@ export default function CallerDashboard() {
         </div>
       </section>
 
-      {/* Recent Activity Timeline */}
+      {/* Recent Activity Timeline (live + derived) */}
       <section className="rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm">
         <div className="p-4">
           <h3 className="font-semibold">Recent Activity Timeline</h3>
         </div>
         <ol className="px-6 pb-6 space-y-4">
           {timeline.map((t, i) => (
-            <li key={i} className="relative pl-8">
+            <li key={`${i}-${t.title}`} className="relative pl-8">
               <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full bg-amber-500" />
               <div className="text-sm font-medium">{t.title}</div>
-              {t.tags.length > 0 && (
+              {t.tags?.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-2">
                   {t.tags.map((tag, j) => (
                     <span
@@ -559,13 +869,39 @@ export default function CallerDashboard() {
           )}
         </ol>
       </section>
+
+      {/* Socket Toasts */}
+      <ToastStack toasts={toasts} remove={remove} />
+
+      {/* CSS animations for toasts */}
+      <style>{`
+        @keyframes toastIn {
+          0% { transform: translateX(100%); opacity: 0; }
+          100% { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes toastOut {
+          0% { transform: translateX(0); opacity: 1; max-height: 500px; margin-bottom: 0.75rem; }
+          50% { opacity: 0; }
+          100% { transform: translateX(100%); opacity: 0; max-height: 0; margin-bottom: 0; }
+        }
+        .animate-toastIn { animation: toastIn 0.3s ease-out forwards; }
+        .animate-toastOut { animation: toastOut 0.3s ease-in forwards; }
+      `}</style>
     </div>
   );
 }
 
 /* ------------ small components (styled like mock) ------------ */
-function KpiCard({ title, m, tone = "gray", className = "", Icon = FiCalendar, iconTone = "gray", sub = "" }) {
-  const diff = (m.prev === 0 && m.cur === 0) ? 0 : Math.round(((m.cur - m.prev) / (m.prev || 1)) * 100);
+function KpiCard({
+  title,
+  m,
+  tone = "gray",
+  className = "",
+  Icon = FiCalendar,
+  iconTone = "gray",
+  sub = "",
+}) {
+  const diff = m.prev === 0 && m.cur === 0 ? 0 : Math.round(((m.cur - m.prev) / (m.prev || 1)) * 100);
   const up = diff >= 0;
   const toneCls =
     tone === "green"
