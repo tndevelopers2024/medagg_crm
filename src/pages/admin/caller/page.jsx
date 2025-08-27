@@ -142,6 +142,12 @@ const dicebear = (seed) =>
     seed || "caller"
   )}`;
 
+const safeDate = (v) => {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(+d) ? null : d;
+};
+
 const readField = (fieldData = [], keys = []) => {
   for (const f of fieldData) {
     const k = (f?.name || "").toLowerCase().replace(/\s+/g, "_");
@@ -151,6 +157,32 @@ const readField = (fieldData = [], keys = []) => {
     }
   }
   return "";
+};
+
+/** pick the best timestamp to represent a booking in analytics */
+const bookingWhen = (b) =>
+  safeDate(b?.doneDate) ||
+  safeDate(b?.date) ||
+  safeDate(b?.updatedAt) ||
+  safeDate(b?.createdAt) ||
+  null;
+
+const summarizeBookings = (arr = []) => {
+  const counts = { pending: 0, booked: 0, done: 0, cancelled: 0 };
+  let latestDate = null;
+  let latestStatus = null;
+
+  for (const b of arr) {
+    const st = (b?.status || "").toLowerCase();
+    if (counts[st] !== undefined) counts[st] += 1;
+
+    const when = bookingWhen(b);
+    if (when && (!latestDate || when > latestDate)) {
+      latestDate = when;
+      latestStatus = st;
+    }
+  }
+  return { counts, latestStatus, latestDate };
 };
 
 const parseLead = (lead) => {
@@ -163,16 +195,34 @@ const parseLead = (lead) => {
     (lead.status && String(lead.status).replace(/_/g, " ")) ||
     readField(lead.fieldData, ["status", "stage", "type"]) ||
     "—";
-  const opd = readField(lead.fieldData, ["opd_status", "opd"]) || "—";
-  const ipd = readField(lead.fieldData, ["ipd_status", "ipd"]) || "—";
 
   const campaign = lead.campaignId || readField(lead.fieldData, ["campaign"]) || "—";
-  const created = lead.createdTime ? new Date(lead.createdTime) : null;
+  const created = safeDate(lead.createdTime) || safeDate(lead.createdAt);
   const lastUpdate =
-    (lead.lastCallAt && new Date(lead.lastCallAt)) ||
-    (lead.updatedAt && new Date(lead.updatedAt)) ||
-    (lead.createdAt && new Date(lead.createdAt)) ||
-    created;
+    safeDate(lead.lastCallAt) || safeDate(lead.updatedAt) || created;
+
+  // normalize OP/IP arrays (straight from your mongoose schema)
+  const opBookings = Array.isArray(lead.opBookings)
+    ? lead.opBookings.map((b) => ({
+        ...b,
+        status: (b?.status || "").toLowerCase(),
+        _when: bookingWhen(b),
+      }))
+    : [];
+  const ipBookings = Array.isArray(lead.ipBookings)
+    ? lead.ipBookings.map((b) => ({
+        ...b,
+        status: (b?.status || "").toLowerCase(),
+        _when: bookingWhen(b),
+      }))
+    : [];
+
+  const op = summarizeBookings(opBookings);
+  const ip = summarizeBookings(ipBookings);
+
+  // compact status for table (latest)
+  const compact = (s) =>
+    s === "done" ? "Done" : s === "booked" ? "Booked" : s === "cancelled" ? "Cancelled" : s ? s[0].toUpperCase() + s.slice(1) : "—";
 
   return {
     id: lead._id || lead.id || lead.leadId,
@@ -181,12 +231,16 @@ const parseLead = (lead) => {
     phone,
     campaign,
     status,
-    opd,
-    ipd,
+    // compact latest statuses for display
+    opd: compact(op.latestStatus),
+    ipd: compact(ip.latestStatus),
+    // raw arrays for analytics
+    opBookings,
+    ipBookings,
     notes: lead.notes || "",
     outcome: lead.lastCallOutcome || "",
-    followUpAt: lead.followUpAt ? new Date(lead.followUpAt) : null,
-    lastContact: lead.lastCallAt ? new Date(lead.lastCallAt) : null,
+    followUpAt: safeDate(lead.followUpAt),
+    lastContact: safeDate(lead.lastCallAt),
     createdAt: created,
     lastUpdate,
   };
@@ -216,7 +270,7 @@ const pill = (tone) =>
     ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
     : "bg-gray-50 text-gray-700 ring-gray-200";
 
-const toneLead = (v) => (/hot/i.test(v) ? "red" : /prospect/i.test(v) ? "blue" : "gray");
+const toneLead = (v) => (/hot/i.test(v) ? "red" : /prospect|interested/i.test(v) ? "blue" : "gray");
 
 /* period ranges */
 const startOfMonth = (offset = 0) => {
@@ -294,7 +348,10 @@ export default function CallerDashboard() {
     };
   }, [softRefresh]);
 
-  const assigned = useMemo(() => allLeads.filter((l) => String(l.assignedTo) === String(id)), [allLeads, id]);
+  const assigned = useMemo(
+    () => allLeads.filter((l) => String(l.assignedTo) === String(id)),
+    [allLeads, id]
+  );
 
   /* period filtering */
   const [from, to] = useMemo(() => {
@@ -308,8 +365,12 @@ export default function CallerDashboard() {
   }, [period, customFrom, customTo]);
 
   const inRange = (d) => d && d >= from && d <= to;
-  const inThis = assigned.filter((l) => inRange(l.createdAt || l.lastUpdate));
 
+  // For "Total Leads" we consider leads created in the period (not bookings)
+  const leadsInThis = useMemo(
+    () => assigned.filter((l) => inRange(l.createdAt)),
+    [assigned, from, to]
+  );
   const prevRange = useMemo(() => {
     if (period === "This Month") return [startOfMonth(-1), endOfMonth(-1)];
     if (period === "Last Month") return [startOfMonth(-2), endOfMonth(-2)];
@@ -330,45 +391,91 @@ export default function CallerDashboard() {
     return [startOfMonth(-1), endOfMonth(-1)];
   }, [period, from, to]);
 
-  const inPrev = useMemo(
-    () =>
-      assigned.filter(
-        (l) => l.createdAt && l.createdAt >= prevRange[0] && l.createdAt <= prevRange[1]
-      ),
+  const leadsInPrev = useMemo(
+    () => assigned.filter((l) => l.createdAt && l.createdAt >= prevRange[0] && l.createdAt <= prevRange[1]),
     [assigned, prevRange]
   );
 
-  const metric = (fn) => ({ cur: inThis.filter(fn).length, prev: inPrev.filter(fn).length });
+  const metricLeads = (arrCur, arrPrev) => ({ cur: arrCur.length, prev: arrPrev.length });
+
+  // ---- Booking-based metrics (correct for your schema) ----
+  const allOp = useMemo(() => assigned.flatMap((l) => l.opBookings || []), [assigned]);
+  const allIp = useMemo(() => assigned.flatMap((l) => l.ipBookings || []), [assigned]);
+
+  const inWindow = (when, win) => when && when >= win[0] && when <= win[1];
+
+  const bookingMetric = (bookings, status, win, winPrev) => {
+    const cur = bookings.filter((b) => b.status === status && inWindow(bookingWhen(b), win)).length;
+    const prev = bookings.filter((b) => b.status === status && inWindow(bookingWhen(b), winPrev)).length;
+    return { cur, prev };
+  };
+
+  const mTotal = metricLeads(leadsInThis, leadsInPrev);
   const monthlyTarget = 20;
-  const mTotal = metric(() => true);
-  const mOPBooked = metric((l) => /booked/i.test(l.opd));
-  const mOPDone = metric((l) => /done|completed/i.test(l.opd));
-  const mOPCancel = metric((l) => /cancel/i.test(l.opd));
-  const mIPDDone = metric((l) => /done|admission/i.test(l.ipd));
   const targetProgress = Math.min(100, Math.round((mTotal.cur / monthlyTarget) * 100));
 
-  /* derived timeline (from lead data) */
+  const mOPBooked = bookingMetric(allOp, "booked", [from, to], prevRange);
+  const mOPDone = bookingMetric(allOp, "done", [from, to], prevRange);
+  const mOPCancel = bookingMetric(allOp, "cancelled", [from, to], prevRange);
+  const mIPDDone = bookingMetric(allIp, "done", [from, to], prevRange);
+
+  /* derived + booking timeline */
   const derivedTimeline = useMemo(() => {
-    return assigned
-      .map((l) => ({
-        when: l.lastUpdate || l.createdAt,
-        title: `Call with ${l.name}`,
-        tags: [
-          /booked/i.test(l.opd) ? "OPD Booked" : null,
-          /done|completed/i.test(l.ipd) ? "IPD Done" : null,
-          l.outcome || null,
-        ].filter(Boolean),
-        note: l.notes || "",
-      }))
+    const items = [];
+
+    // from calls / general lead updates
+    for (const l of assigned) {
+      const baseWhen = l.lastUpdate || l.createdAt;
+      if (baseWhen) {
+        items.push({
+          when: baseWhen,
+          title: `Call with ${l.name}`,
+          tags: [l.outcome || "Call"],
+          note: l.notes || "",
+        });
+      }
+    }
+
+    // OP bookings
+    for (const l of assigned) {
+      for (const b of l.opBookings || []) {
+        const when = bookingWhen(b);
+        if (!when) continue;
+        const label =
+          b.status === "done" ? "OP Done" : b.status === "booked" ? "OP Booked" : b.status === "cancelled" ? "OP Cancelled" : "OP Pending";
+        items.push({
+          when,
+          title: `${label} - ${l.name}`,
+          tags: ["OPD", label],
+          note: [b.hospital, b.doctor, b.surgery].filter(Boolean).join(" • "),
+        });
+      }
+    }
+
+    // IP bookings
+    for (const l of assigned) {
+      for (const b of l.ipBookings || []) {
+        const when = bookingWhen(b);
+        if (!when) continue;
+        const label = b.status === "done" ? "IPD Done" : b.status === "booked" ? "IPD Booked" : b.status === "cancelled" ? "IPD Cancelled" : "IPD Pending";
+        items.push({
+          when,
+          title: `${label} - ${l.name}`,
+          tags: ["IPD", label, b.caseType || ""].filter(Boolean),
+          note: [b.hospital, b.doctor].filter(Boolean).join(" • "),
+        });
+      }
+    }
+
+    return items
       .filter((x) => x.when)
       .sort((a, b) => b.when - a.when)
-      .slice(0, 10);
+      .slice(0, 20);
   }, [assigned]);
 
-  /* merge live + derived for display (live first) */
+  // merge live + derived for display (live first)
   const timeline = useMemo(() => {
     const all = [...liveActivity, ...derivedTimeline];
-    // de-dupe by (title+when)
     const seen = new Set();
     const out = [];
     for (const t of all) {
@@ -390,8 +497,8 @@ export default function CallerDashboard() {
       "Assigned",
       "Last Contact",
       "Next Follow-up",
-      "OPD",
-      "IPD",
+      "OPD (latest)",
+      "IPD (latest)",
       "Outcome",
       "Notes",
     ];
@@ -423,7 +530,6 @@ export default function CallerDashboard() {
   };
 
   /* ------- socket presence + live events ------- */
-  // Helper to push a live item (and cap list)
   const pushLive = useCallback((evt) => {
     setLiveActivity((prev) => {
       const next = [{ ...evt }, ...prev];
@@ -431,7 +537,6 @@ export default function CallerDashboard() {
     });
   }, []);
 
-  // Small refresh guard (avoid spamming API)
   const lastRefreshRef = useRef(0);
   const inflightRef = useRef(false);
   const throttledRefresh = useCallback(async () => {
@@ -459,15 +564,11 @@ export default function CallerDashboard() {
     return () => clearInterval(t);
   }, [isOnline, lastSeen]);
 
-  // Wire socket events
   useEffect(() => {
     if (!socket || !isConnected || !id) return;
 
-    // Presence from backend:
-    // Expect payload: { userId, online, lastSeen }
     const onPresence = (p = {}) => {
       if (String(p.userId) !== String(id)) return;
-      // prevent flicker if duplicate
       const dupKey = `presence:${id}:${p.online ? "1" : "0"}:${p.lastSeen || ""}`;
       if (dedupe(dupKey)) return;
       setIsOnline(!!p.online);
@@ -476,8 +577,6 @@ export default function CallerDashboard() {
       seenPresenceRef.current = Date.now();
     };
 
-    // A lead was newly assigned to this caller
-    // Expect payload: { leadId, callerId, by, at }
     const onLeadAssigned = (p = {}) => {
       if (String(p.callerId) !== String(id)) return;
       const key = `assign:${p.leadId || ""}:${p.at || ""}`;
@@ -498,8 +597,6 @@ export default function CallerDashboard() {
       throttledRefresh();
     };
 
-    // Any update to leads owned by this caller
-    // Expect payload: { leadId, callerId, fields, at }
     const onLeadUpdated = (p = {}) => {
       if (String(p.callerId) !== String(id)) return;
       const key = `leadupd:${p.leadId || ""}:${p.at || ""}`;
@@ -519,8 +616,6 @@ export default function CallerDashboard() {
       throttledRefresh();
     };
 
-    // Calls logged by this caller
-    // Expect payload: { callerId, leadId, outcome, durationSec, at }
     const onCallLogged = (p = {}) => {
       if (String(p.callerId) !== String(id)) return;
       const key = `call:${p.leadId || ""}:${p.at || ""}`;
@@ -541,18 +636,19 @@ export default function CallerDashboard() {
       throttledRefresh();
     };
 
-    // Hook up
+    // Optional: dedicated booking events if your backend emits them
+    // socket.on?.("booking:op:update", ...);
+    // socket.on?.("booking:ip:update", ...);
+
     socket.on?.("caller:presence", onPresence);
     socket.on?.("lead:assigned", onLeadAssigned);
     socket.on?.("lead:updated", onLeadUpdated);
     socket.on?.("call:logged", onCallLogged);
 
-    // Ask server for current presence snapshot (optional; ignore if server doesn’t support)
     try {
       socket.emit?.("caller:presence:request", { userId: id });
     } catch {}
 
-    // Friendly connected toast
     push({
       title: "Live updates ready",
       message: "You’ll see real-time changes for this caller.",
@@ -709,7 +805,7 @@ export default function CallerDashboard() {
             m={mTotal}
             Icon={FiCalendar}
             iconTone="amber"
-            sub="This period"
+            sub="Created in period"
           />
           <KpiCard
             title="OP Booked"
@@ -717,7 +813,7 @@ export default function CallerDashboard() {
             tone="green"
             Icon={FiCalendar}
             iconTone="indigo"
-            sub="This period"
+            sub="Bookings in period"
           />
           <KpiCard
             title="OPD Done"
@@ -725,7 +821,7 @@ export default function CallerDashboard() {
             tone="green"
             Icon={FiCheckCircle}
             iconTone="green"
-            sub="This period"
+            sub="Completions in period"
           />
           <KpiCard
             title="OPD Cancelled"
@@ -733,7 +829,7 @@ export default function CallerDashboard() {
             tone="red"
             Icon={FiXCircle}
             iconTone="red"
-            sub="This period"
+            sub="Cancellations in period"
           />
           <KpiCard
             title="IPD Done"
@@ -742,7 +838,7 @@ export default function CallerDashboard() {
             Icon={FiCheckCircle}
             iconTone="green"
             className="sm:col-span-2 xl:col-span-1"
-            sub="This period"
+            sub="Completions in period"
           />
         </div>
       </section>
@@ -836,7 +932,7 @@ export default function CallerDashboard() {
         </div>
       </section>
 
-      {/* Recent Activity Timeline (live + derived) */}
+      {/* Recent Activity Timeline (live + derived + bookings) */}
       <section className="rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm">
         <div className="p-4">
           <h3 className="font-semibold">Recent Activity Timeline</h3>

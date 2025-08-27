@@ -18,6 +18,8 @@ import {
   fetchAllLeads,
   fetchLeadsByDate,
 } from "../../../utils/api";
+import { usePageTitle } from "../../../contexts/TopbarTitleContext";
+
 // ---------- helpers ----------
 const useQuery = () => new URLSearchParams(useLocation().search);
 const cls = (...c) => c.filter(Boolean).join(" ");
@@ -150,7 +152,7 @@ export default function LeadsList() {
   const dateFilter = (q.get("date") || "today").toLowerCase(); // today | all | yyyy-mm-dd
   const statusFilter = (q.get("status") || "new").toLowerCase(); // new|recapture|hot|...
   const searchQ = (q.get("q") || "").trim();
-
+  usePageTitle("Lead List");
   const [me, setMe] = useState(null);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);

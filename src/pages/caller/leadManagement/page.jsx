@@ -34,7 +34,7 @@ import {
   BOOKING_STATUSES,
   requestMobileCall,
 } from "../../../utils/api";
-
+import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 // ---------- helpers ----------
 const cls = (...c) => c.filter(Boolean).join(" ");
 const useQuery = () => new URLSearchParams(useLocation().search);
@@ -172,7 +172,7 @@ export default function LeadManagement() {
   const { id } = useParams(); // /:role/leads/:id
   const q = useQuery();
   const navigate = useNavigate();
-
+  usePageTitle("Lead Management");
   const [lead, setLead] = useState(null);
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
