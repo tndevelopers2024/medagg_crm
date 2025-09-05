@@ -775,22 +775,22 @@ export default function CallersDashboard() {
             accent="violet"
             onClick={() => navigate("/caller/leads?date=today&status=new")}
           />
-          <StatCard
-            title={"Today's Task"}
-            value={computed.tasksTodayCount}
-            sub={`${computed.tasksTodayCount} due`}
-            icon={<FiTarget />}
-            accent="pink"
-            onClick={() => navigate("/caller/leads?date=today&status=new")}
-          />
+         <StatCard
+   title={"Today's Task"}
+   value={computed.tasksTodayCount}
+   sub={`${computed.tasksTodayCount} due`}
+   icon={<FiTarget />}
+   accent="pink"
+   onClick={() => navigate("/caller/leads?date=tasks_today&view=tasks_today")}
+ />
           <StatCard
             title={"Tomorrow's Task"}
             value={computed.tasksTomorrowCount}
             sub={`${computed.tasksTomorrowCount} scheduled`}
             icon={<FiCalendar />}
             accent="sky"
-            onClick={() => navigate("/caller/leads?date=all&status=new")}
-          />
+    onClick={() => navigate("/caller/leads?date=tasks_tomorrow&view=tasks_tomorrow")}
+  />
           <StatCard
             title="OPD Booked Today"
             value={computed.opdBookedToday}
