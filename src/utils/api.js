@@ -18,7 +18,6 @@ export const BASE_URL =
     ? "http://localhost:5000/api/v1"
     : "https://medagg.online/api/v1");
 
-
 const api = axios.create({
   baseURL: BASE_URL,
   withCredentials: false,
@@ -124,19 +123,19 @@ export const LEAD_STATUSES = [
   "converted",
 ];
 
- export const CALL_OUTCOMES = [
-   "connected",
-   "interested",
-   "not_interested",
-   "converted",
-   "no_answer",
-   "busy",
-   "switched_off",
-   "callback",
-   "voicemail",
-   "wrong_number",
-   "do_not_disturb",
- ];
+export const CALL_OUTCOMES = [
+  "connected",
+  "interested",
+  "not_interested",
+  "converted",
+  "no_answer",
+  "busy",
+  "switched_off",
+  "callback",
+  "voicemail",
+  "wrong_number",
+  "do_not_disturb",
+];
 
 export const BOOKING_STATUSES = ["pending", "booked", "done", "cancelled"];
 
@@ -363,6 +362,35 @@ export const updateLeadDetails = async (id, payload = {}) => {
 };
 
 /**
+ * POST /caller/leads/:id/defer
+ * Accepts:
+ *  - Without `date`: moves to tomorrow (back-compat), with optional { hour, minute } or { keepTime: true }.
+ *  - With `date`: schedules to a specific date while preserving IST semantics.
+ *      { date: 'YYYY-MM-DD' | ISOString, keepTime?: boolean, hour?: number, minute?: number }
+ * Returns: { message, followUpAt(Date) }
+ */
+export const deferLeadToNextDay = async (id, opts = {}) => {
+  const { data } = await api.post(`/caller/leads/${id}/defer`, opts);
+  return {
+    message: data?.message || (opts?.date ? "Follow-up rescheduled" : "Follow-up moved to next day"),
+    followUpAt: data?.followUpAt ? new Date(data.followUpAt) : null,
+  };
+};
+
+// New friendly wrapper for explicit reschedule (any date)
+export const rescheduleLeadFollowUp = async (id, { date, keepTime = false, hour, minute } = {}) => {
+  const payload = {};
+  if (date != null) payload.date = date;         // 'YYYY-MM-DD' (IST) or ISO string
+  if (keepTime != null) payload.keepTime = !!keepTime;
+  if (Number.isFinite(hour)) payload.hour = Number(hour);
+  if (Number.isFinite(minute)) payload.minute = Number(minute);
+  return deferLeadToNextDay(id, payload);
+};
+
+// Optional alias with a shorter name, if you prefer in UI code.
+export const scheduleLeadFollowUp = rescheduleLeadFollowUp;
+
+/**
  * POST /caller/leads/:id/calls
  * body: { durationSec?, outcome(required), notes?, recordingUrl?, nextFollowUpAt?, setStatus? }
  */
@@ -487,30 +515,75 @@ export const fetchMyActivities = async (params = {}) => {
   };
 };
 
-
 // src/utils/api.js
 export const fetchLeadActivities = async (leadId, params = {}) => {
-  try {
-    const { data } = await api.get(`/activities/lead/${leadId}`, { params });
-    const rows = data?.data || [];
+  const tryParse = (data) => {
+    const rows = data?.data || data?.activities || [];
     return {
       count: data?.count ?? rows.length,
       activities: rows.map(normalizeActivity),
     };
-  } catch (err) {
-    if (err?.response?.status === 404) {
-      // fallback to old route
+  };
+
+  // 1) New route (recommended)
+  try {
+    const { data } = await api.get(`/caller/leads/${leadId}/activities`, { params });
+    return tryParse(data);
+  } catch (e1) {
+    // 2) Old activityRoutes variant
+    try {
+      const { data } = await api.get(`/activities/lead/${leadId}`, { params });
+      return tryParse(data);
+    } catch (e2) {
+      // 3) Very old singular path
       const { data } = await api.get(`/caller/leads/${leadId}/activity`, { params });
-      const rows = data?.data || [];
-      return {
-        count: data?.count ?? rows.length,
-        activities: rows.map(normalizeActivity),
-      };
+      return tryParse(data);
     }
-    throw err;
   }
 };
 
+/**
+ * GET /caller/followups/tomorrow
+ */
+export const fetchTomorrowFollowUps = async () => {
+  const { data } = await api.get("/caller/followups/tomorrow");
+  const rows = data?.data || [];
+  return {
+    count: data?.count ?? rows.length,
+    leads: rows.map(normalizeLead),
+  };
+};
+
+/**
+ * GET /caller/leads/yesterday
+ * Supports: ?q=&page=&limit=
+ */
+export const fetchYesterdayAssignedLeads = async (params = {}) => {
+  try {
+    const { data } = await api.get("/caller/leads/yesterday", { params });
+    const rows = data?.data || data?.leads || [];
+    return {
+      page: Number(data?.page ?? params.page ?? 1),
+      limit: Number(data?.limit ?? params.limit ?? 20),
+      total: Number(data?.total ?? rows.length),
+      leads: rows.map(normalizeLead),
+    };
+  } catch (err) {
+    // Optional fallback if your routes use /me/ instead of /caller/
+    try {
+      const { data } = await api.get("/me/leads/yesterday", { params });
+      const rows = data?.data || data?.leads || [];
+      return {
+        page: Number(data?.page ?? params.page ?? 1),
+        limit: Number(data?.limit ?? params.limit ?? 20),
+        total: Number(data?.total ?? rows.length),
+        leads: rows.map(normalizeLead),
+      };
+    } catch {
+      throw err;
+    }
+  }
+};
 
 /**
  * CALLER — GET /activities/search

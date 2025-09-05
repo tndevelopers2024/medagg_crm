@@ -9,6 +9,7 @@ import {
   FiFilter,
   FiUsers,
   FiPlus,
+  FiX,
 } from "react-icons/fi";
 import { FaFacebook } from "react-icons/fa";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -17,6 +18,8 @@ import {
   fetchAssignedLeads,
   fetchAllLeads,
   fetchLeadsByDate,
+  fetchTodayFollowUps,
+  fetchTomorrowFollowUps,
 } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 
@@ -109,12 +112,12 @@ const LeadRow = ({ lead }) => {
   const age = readField(fd, ["age"]) || "—";
   const location = readField(fd, ["city", "location"]) || "—";
   const procedure = readField(fd, ["procedure", "treatment"]) || "—";
-const navigate = useNavigate();
+  const navigate = useNavigate();
   return (
     <div
-    onClick={() => navigate(`/caller/leads/${lead.id}`)} // or /admin/leads/:id based on role
-    className="grid grid-cols-12 items-center gap-3 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50"
-  >
+      onClick={() => navigate(`/caller/leads/${lead.id}`)}
+      className="grid grid-cols-12 items-center gap-3 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50"
+    >
       <div className="col-span-3">
         <p className="text-sm text-gray-900">{name}</p>
       </div>
@@ -148,14 +151,43 @@ export default function LeadsList() {
   const navigate = useNavigate();
   const q = useQuery();
 
-  // read filters from URL
-  const dateFilter = (q.get("date") || "today").toLowerCase(); // today | all | yyyy-mm-dd
-  const statusFilter = (q.get("status") || "new").toLowerCase(); // new|recapture|hot|...
+  // URL params
+  const rawDate = (q.get("date") || "today").toLowerCase();       // today | all | yyyy-mm-dd | tasks_today | tasks_tomorrow | tomorrow
+  const view = (q.get("view") || "").toLowerCase();               // tasks_today | tasks_tomorrow
+  const statusFilterRaw = (q.get("status") || "new").toLowerCase();
   const searchQ = (q.get("q") || "").trim();
+
+  // Interpret tasks modes from either param
+  const isTasksToday =
+    view === "tasks_today" ||
+    rawDate === "tasks_today" ||
+    rawDate === "today_tasks";
+  const isTasksTomorrow =
+    view === "tasks_tomorrow" ||
+    rawDate === "tasks_tomorrow" ||
+    rawDate === "tomorrow";
+
+  const dateFilter = isTasksToday
+    ? "tasks_today"
+    : isTasksTomorrow
+    ? "tasks_tomorrow"
+    : rawDate;
+
+  // In tasks mode, ignore status filter (show all tasks)
+  const statusFilter = (isTasksToday || isTasksTomorrow) ? "" : statusFilterRaw;
+
   usePageTitle("Lead List");
   const [me, setMe] = useState(null);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // NEW: bind a visible date picker to the query (?date=YYYY-MM-DD)
+  const [customDate, setCustomDate] = useState(
+    /^\d{4}-\d{2}-\d{2}$/.test(dateFilter) ? dateFilter : ""
+  );
+  useEffect(() => {
+    setCustomDate(/^\d{4}-\d{2}-\d{2}$/.test(dateFilter) ? dateFilter : "");
+  }, [dateFilter]);
 
   const load = async () => {
     setLoading(true);
@@ -164,11 +196,11 @@ export default function LeadsList() {
       setMe(user);
 
       let data = [];
+
       if (user.role === "admin") {
+        // Admin views (server date filter)
         if (dateFilter === "today") {
-          const res = await fetchLeadsByDate(
-            new Date().toISOString().slice(0, 10)
-          );
+          const res = await fetchLeadsByDate(new Date().toISOString().slice(0, 10));
           data = res.leads;
         } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateFilter)) {
           const res = await fetchLeadsByDate(dateFilter);
@@ -178,14 +210,25 @@ export default function LeadsList() {
           data = res.leads;
         }
       } else {
-        // caller
-        const res = await fetchAssignedLeads();
-        data = res.leads || [];
-        if (dateFilter === "today") {
-          data = data.filter((l) => isToday(parseDate(l.createdTime)));
-        } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateFilter)) {
-          const d = dateFilter;
-          data = data.filter((l) => d === (l.createdTime || "").slice(0, 10));
+        // Caller views
+        if (isTasksToday) {
+          const res = await fetchTodayFollowUps();
+          data = res.leads || [];
+        } else if (isTasksTomorrow) {
+          const res = await fetchTomorrowFollowUps();
+          data = res.leads || [];
+        } else {
+          // Assigned leads always fetched; created-time filter applied client-side
+          const res = await fetchAssignedLeads();
+          data = res.leads || [];
+
+          if (dateFilter === "today") {
+            data = data.filter((l) => isToday(parseDate(l.createdTime)));
+          } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateFilter)) {
+            const d = dateFilter;
+            data = data.filter((l) => d === (l.createdTime || "").slice(0, 10));
+          }
+          // "all" shows everything assigned
         }
       }
 
@@ -198,12 +241,13 @@ export default function LeadsList() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFilter]);
+  }, [dateFilter, view]);
 
   const filtered = useMemo(() => {
     const byStatus = rows.filter((r) => {
+      if (!statusFilter) return true;
       const st = normStatus(readField(r.fieldData, ["lead_status", "status", "bucket"]));
-      return statusFilter ? st === statusFilter : true;
+      return st === statusFilter;
     });
 
     const bySearch = !searchQ
@@ -225,9 +269,11 @@ export default function LeadsList() {
   }, [rows, statusFilter, searchQ]);
 
   const groupTitle = useMemo(() => {
-    const cap = statusFilter[0].toUpperCase() + statusFilter.slice(1);
+    if (isTasksToday) return "Today's Tasks (Follow-ups)";
+    if (isTasksTomorrow) return "Tomorrow's Tasks (Follow-ups)";
+    const cap = statusFilter ? statusFilter[0].toUpperCase() + statusFilter.slice(1) : "All";
     return `${cap} Leads`;
-  }, [statusFilter]);
+  }, [isTasksToday, isTasksTomorrow, statusFilter]);
 
   const updateQuery = (patch) => {
     const params = new URLSearchParams(window.location.search);
@@ -285,7 +331,6 @@ export default function LeadsList() {
                 title="Notifications"
               >
                 <span className="sr-only">Notifications</span>
-                {/* bell could go here */}
               </button>
             </div>
           </div>
@@ -295,32 +340,69 @@ export default function LeadsList() {
       {/* Filters row */}
       <div className="mx-auto px-4 py-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            {/* Date dropdown */}
-            <div className="relative">
-              <button className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50">
-                {/^\d{4}-\d{2}-\d{2}$/.test(dateFilter) ? dateFilter : "Today"}
-                <FiChevronDown />
-              </button>
-              {/* For brevity, simple clicks: */}
-              <div className="hidden" />
-            </div>
-            {/* Quick: Today toggle */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Quick selector (includes tasks views) */}
             <select
               className="rounded-xl border-gray-200 text-sm"
               value={dateFilter}
-              onChange={(e) => updateQuery({ date: e.target.value })}
+              onChange={(e) => updateQuery({ date: e.target.value, view: "" })}
             >
-              <option value="today">Today</option>
-              <option value="all">All</option>
+              <option value="today">Today (created)</option>
+              <option value="all">All (created)</option>
+              <option value="tasks_today">Today's Tasks (follow-ups)</option>
+              <option value="tasks_tomorrow">Tomorrow's Tasks (follow-ups)</option>
+              {/* Keep dateFilter if it's already a YYYY-MM-DD so the select doesn't override it */}
+              {/^\d{4}-\d{2}-\d{2}$/.test(dateFilter) && (
+                <option value={dateFilter}>{dateFilter}</option>
+              )}
             </select>
 
-            {/* Status dropdown */}
+            {/* NEW: direct date picker (works for callers & admins) */}
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                className="rounded-xl border border-gray-200 text-sm px-3 py-2"
+                value={customDate}
+                disabled={isTasksToday || isTasksTomorrow}
+                title={
+                  isTasksToday || isTasksTomorrow
+                    ? "Pick a non-task view to filter by date"
+                    : "Filter by specific date"
+                }
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCustomDate(v);
+                  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+                    updateQuery({ date: v, view: "" });
+                  } else {
+                    // if cleared, fall back to "all"
+                    updateQuery({ date: "all", view: "" });
+                  }
+                }}
+              />
+              {customDate && (
+                <button
+                  className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-2.5 py-2 text-xs hover:bg-gray-50"
+                  title="Clear date filter"
+                  onClick={() => {
+                    setCustomDate("");
+                    updateQuery({ date: "all", view: "" });
+                  }}
+                >
+                  <FiX /> Clear
+                </button>
+              )}
+            </div>
+
+            {/* Status dropdown (ignored in tasks mode) */}
             <select
-              className="rounded-xl border-gray-200 text-sm ml-2"
-              value={statusFilter}
+              className="rounded-xl border-gray-200 text-sm"
+              value={statusFilter || ""}
               onChange={(e) => updateQuery({ status: e.target.value })}
+              disabled={isTasksToday || isTasksTomorrow}
+              title={(isTasksToday || isTasksTomorrow) ? "Status filter is ignored for tasks view" : "Filter by status"}
             >
+              <option value="">Lead Status: All</option>
               <option value="new">Lead Status: New</option>
               <option value="recapture">Lead Status: Recapture</option>
               <option value="hot">Lead Status: Hot</option>
@@ -330,7 +412,7 @@ export default function LeadsList() {
             </select>
           </div>
 
-          {/* Search */}
+          {/* Search & actions */}
           <div className="flex items-center gap-2 w-full md:w-[420px]">
             <div className="relative flex-1">
               <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -392,16 +474,8 @@ export default function LeadsList() {
           )}
         </div>
       </section>
-      {/* Floating Action Button */}
-      <button
-        title="Quick actions"
-        className="fixed bottom-6 right-6 group  inline-flex items-center justify-center rounded-full p-4 bg-gradient-to-br from-[#ff2e6e] to-[#ff5aa4] text-white shadow-xl hover:opacity-95"
-      >
-        <FiPlus size={22} />
-        <span className="absolute -top-1 -right-1 inline-flex items-center justify-center h-6 min-w-6 px-1 rounded-full bg-white text-[#ff2e6e] text-xs font-semibold shadow">
-          3
-        </span>
-      </button>
+
+  
     </main>
   );
 }

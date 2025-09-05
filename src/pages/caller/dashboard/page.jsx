@@ -17,7 +17,12 @@ import {
   FiX,
 } from "react-icons/fi";
 import { createPortal } from "react-dom";
-import { getMe, fetchAssignedLeads } from "../../../utils/api";
+import {
+  getMe,
+  fetchAssignedLeads,
+  fetchTodayFollowUps,
+  fetchTomorrowFollowUps,
+} from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useNavigate } from "react-router-dom";
 import { useSocket } from "../../../contexts/SocketProvider";
@@ -426,6 +431,8 @@ const useSoftAssignedRefresh = (setter) => {
 export default function CallersDashboard() {
   const [me, setMe] = useState(null);
   const [leads, setLeads] = useState([]);
+  const [todayTasks, setTodayTasks] = useState([]);
+  const [tomorrowTasks, setTomorrowTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   usePageTitle("Caller Dashboard", "Welcome back");
@@ -437,16 +444,34 @@ export default function CallersDashboard() {
   const dedupe = useEventDeduper(8000);
   const softRefreshAssigned = useSoftAssignedRefresh(setLeads);
 
+  // Refresh tasks helper
+  const refreshTasks = useCallback(async () => {
+    try {
+      const [t1, t2] = await Promise.all([fetchTodayFollowUps(), fetchTomorrowFollowUps()]);
+      setTodayTasks(t1.leads || []);
+      setTomorrowTasks(t2.leads || []);
+    } catch (e) {
+      console.warn("Failed to refresh tasks", e);
+    }
+  }, []);
+
   // initial load
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         setLoading(true);
-        const [user, assigned] = await Promise.all([getMe(), fetchAssignedLeads()]);
+        const [user, assigned, t1, t2] = await Promise.all([
+          getMe(),
+          fetchAssignedLeads(),
+          fetchTodayFollowUps(),
+          fetchTomorrowFollowUps(),
+        ]);
         if (!mounted) return;
         setMe(user);
         setLeads(assigned.leads || []);
+        setTodayTasks(t1.leads || []);
+        setTomorrowTasks(t2.leads || []);
       } catch (e) {
         setErr(e?.response?.data?.message || e?.message || "Failed to load dashboard data");
       } finally {
@@ -501,6 +526,7 @@ export default function CallersDashboard() {
         },
       });
       softRefreshAssigned();
+      refreshTasks();
     };
 
     const onLeadCreated = (p = {}) => {
@@ -517,6 +543,7 @@ export default function CallersDashboard() {
         },
       });
       softRefreshAssigned();
+      refreshTasks();
     };
 
     const onLeadUpdated = (p = {}) => {
@@ -528,6 +555,7 @@ export default function CallersDashboard() {
         leadDetails: { phone: s.phone },
       });
       softRefreshAssigned();
+      refreshTasks();
     };
 
     const onStatusUpdated = (p = {}) => {
@@ -538,6 +566,7 @@ export default function CallersDashboard() {
         leadName: s.name,
       });
       softRefreshAssigned();
+      refreshTasks();
     };
 
     const onActivity = (p = {}) => {
@@ -548,6 +577,7 @@ export default function CallersDashboard() {
         leadName: s.name || `Lead #${s.id}`,
       });
       softRefreshAssigned();
+      refreshTasks();
     };
 
     const onCallLogged = (p = {}) => {
@@ -558,6 +588,7 @@ export default function CallersDashboard() {
         tone: "success",
       });
       softRefreshAssigned();
+      refreshTasks();
     };
 
     const onLeadsAssigned = (p = {}) => {
@@ -566,6 +597,7 @@ export default function CallersDashboard() {
       const n = Array.isArray(p?.leadIds) ? p.leadIds.length : 1;
       notify("Leads assigned", `${n} lead(s) assigned to a caller.`, { icon: FiInfo });
       softRefreshAssigned();
+      refreshTasks();
     };
 
     socket.on?.("lead:intake", onLeadIntake);
@@ -588,7 +620,7 @@ export default function CallersDashboard() {
       socket.off?.("call:logged", onCallLogged);
       socket.off?.("leads:assigned", onLeadsAssigned);
     };
-  }, [socket, isConnected, notify, dedupe, softRefreshAssigned]);
+  }, [socket, isConnected, notify, dedupe, softRefreshAssigned, refreshTasks]);
 
   /* -------------------- computed metrics -------------------- */
   const computed = useMemo(() => {
@@ -612,10 +644,6 @@ export default function CallersDashboard() {
     let opdDoneToday = 0;
     let ipdDoneToday = 0;
 
-    const tasksToday = [];
-    const tasksTomorrow = [];
-    const upcomingHour = [];
-
     for (const lead of leads) {
       const created = parseDate(lead.createdTime);
       const fd = Array.isArray(lead.fieldData) ? lead.fieldData : [];
@@ -626,25 +654,6 @@ export default function CallersDashboard() {
       if (buckets[status] !== undefined) buckets[status]++;
 
       if (isToday(created)) todayNewLeads++;
-
-      const fu =
-        readField(fd, [
-          "next_followup",
-          "next_follow_up",
-          "follow_up",
-          "followup",
-          "follow_up_at",
-          "followup_at",
-        ]) || "";
-      const fuDate = parseDate(fu);
-      if (fuDate) {
-        if (isToday(fuDate)) tasksToday.push({ lead, fuDate });
-        else if (isTomorrow(fuDate)) tasksTomorrow.push({ lead, fuDate });
-        if (withinNextMinutes(fuDate, 60)) {
-          const diffMin = Math.max(1, Math.round((fuDate.getTime() - now.getTime()) / 60000));
-          upcomingHour.push({ lead, fuDate, diffMin });
-        }
-      }
 
       const lastCall = parseDate(readField(fd, ["last_call_at", "last_called_at", "last_call"]));
       if (lastCall && isToday(lastCall)) callsMadeToday++;
@@ -661,7 +670,19 @@ export default function CallersDashboard() {
       if (status === "ipd done" && isToday(created)) ipdDoneToday++;
     }
 
-    upcomingHour.sort((a, b) => a.fuDate - b.fuDate);
+    // tasks from API
+    const tasksTodayCount = todayTasks.length;
+    const tasksTomorrowCount = tomorrowTasks.length;
+
+    const upcomingHour = todayTasks
+      .filter((l) => withinNextMinutes(l.followUpAt, 60))
+      .map((lead) => {
+        const fuDate = lead.followUpAt instanceof Date ? lead.followUpAt : (lead.followUpAt ? new Date(lead.followUpAt) : null);
+        const diffMin = fuDate ? Math.max(1, Math.round((fuDate.getTime() - now.getTime()) / 60000)) : "—";
+        return { lead, fuDate, diffMin };
+      })
+      .sort((a, b) => (a.fuDate?.getTime() || 0) - (b.fuDate?.getTime() || 0))
+      .slice(0, 3);
 
     const lastCallAgoMin = lastCallAt
       ? Math.max(1, Math.round((now.getTime() - lastCallAt.getTime()) / 60000))
@@ -669,8 +690,8 @@ export default function CallersDashboard() {
 
     return {
       todayNewLeads,
-      tasksTodayCount: tasksToday.length,
-      tasksTomorrowCount: tasksTomorrow.length,
+      tasksTodayCount,
+      tasksTomorrowCount,
       opdBookedToday,
       opdDoneToday,
       ipdDoneToday,
@@ -678,10 +699,10 @@ export default function CallersDashboard() {
       callDurationMin,
       idleMin,
       lastCallAgoMin,
-      upcomingHour: upcomingHour.slice(0, 3),
+      upcomingHour,
       buckets,
     };
-  }, [leads]);
+  }, [leads, todayTasks, tomorrowTasks]);
 
   // Bucket bars
   const bucketList = useMemo(() => {

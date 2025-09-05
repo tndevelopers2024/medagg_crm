@@ -18,27 +18,30 @@ import {
   FiUser,
 } from "react-icons/fi";
 import {
-  getMe,
-  fetchAssignedLeads,
-  fetchAllLeads,
+  // removed: getMe, fetchAssignedLeads, fetchAllLeads
   fetchLeadDetail,
   updateLeadDetails,
   updateLeadStatus,
+  deferLeadToNextDay, // uses date/hour/minute now
   addOpBooking,
   updateOpBooking,
   removeOpBooking,
   addIpBooking,
   updateIpBooking,
   removeIpBooking,
-  fetchLeadActivities, // ⬅️ NEW
+  fetchLeadActivities,
   BOOKING_STATUSES,
   requestMobileCall,
 } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
+
 // ---------- helpers ----------
 const cls = (...c) => c.filter(Boolean).join(" ");
 const useQuery = () => new URLSearchParams(useLocation().search);
 const parseDate = (v) => (v ? new Date(v) : null);
+const pad2 = (n) => String(n).padStart(2, "0");
+const toYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const tomorrowYMD = () => toYMD(new Date(Date.now() + 24 * 60 * 60 * 1000));
 const fmtTime = (d) =>
   d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
 const fmtDate = (v) => {
@@ -46,6 +49,20 @@ const fmtDate = (v) => {
   const d = typeof v === "string" ? new Date(v) : v;
   if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString();
+};
+const fmtDateTime = (v) => {
+  if (!v) return "—";
+  const d = typeof v === "string" ? new Date(v) : v;
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "—";
+  return `${d.toLocaleDateString()} • ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+};
+const timeToHHMM = (dateLike) => {
+  if (!dateLike) return "10:00";
+  const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return "10:00";
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 };
 
 const readField = (fieldData = [], keys = []) => {
@@ -173,10 +190,12 @@ export default function LeadManagement() {
   const q = useQuery();
   const navigate = useNavigate();
   usePageTitle("Lead Management");
+
   const [lead, setLead] = useState(null);
-  const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  const [laterDate, setLaterDate] = useState("");
 
   // form states (left card)
   const [form, setForm] = useState({
@@ -199,32 +218,16 @@ export default function LeadManagement() {
   const [opBookings, setOpBookings] = useState([]);
   const [ipBookings, setIpBookings] = useState([]);
   const [calling, setCalling] = useState(false);
-  // NEW: create forms (single row inputs to add a booking)
-  const [op, setOp] = useState({
-    date: "",
-    time: "",
-    hospital: "",
-    doctor: "",
-    status: "pending",
-    surgery: "",
-    payment: "",
-  });
 
-  const [ip, setIp] = useState({
-    date: "",
-    time: "",
-    hospital: "",
-    doctor: "",
-    caseType: "",
-    status: "pending",
-    payment: "",
-  });
+  // NEW: defer modal
+  const [deferring, setDeferring] = useState(false);
+  const [showLaterModal, setShowLaterModal] = useState(false);
+  const [laterTime, setLaterTime] = useState("10:00");
 
   // activities from backend
   const [activities, setActivities] = useState([]);
   const [actsLoading, setActsLoading] = useState(false);
   const [expanded, setExpanded] = useState({}); // activityId -> boolean
-
   const toggleExpand = (aid) => setExpanded((s) => ({ ...s, [aid]: !s[aid] }));
 
   const loadActivities = useCallback(async () => {
@@ -240,59 +243,33 @@ export default function LeadManagement() {
     }
   }, [id]);
 
+  // —— load the lead ONLY through fetchLeadDetail ——
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         setLoading(true);
-        const user = await getMe();
+
+        // 1) Fetch the lead directly
+        const detail = await fetchLeadDetail(id);
         if (!mounted) return;
-        setMe(user);
 
-        // Find the lead by id (caller: assigned leads; admin: all leads)
-        let all = [];
-        if (user.role === "admin") {
-          const res = await fetchAllLeads();
-          all = res.leads || [];
-        } else {
-          const res = await fetchAssignedLeads();
-          all = res.leads || [];
-        }
-        const found =
-          all.find((l) => String(l.id) === id) ||
-          all.find((l) => String(l._id) === id);
+        setLead(detail);
+        setOpBookings(detail.opBookings || []);
+        setIpBookings(detail.ipBookings || []);
 
-        if (!found) {
-          setLead(null);
-          return;
-        }
-        setLead(found);
-
-        // detail for bookings
-        try {
-          const detail = await fetchLeadDetail(id);
-          if (mounted && detail) {
-            setOpBookings(detail.opBookings || []);
-            setIpBookings(detail.ipBookings || []);
-          }
-        } catch (e) {
-          console.warn("fetchLeadDetail warn:", e?.message || e);
-        }
-
-        // primary form from fieldData
-        const fd = found.fieldData || [];
+        // 2) Populate UI from fieldData
+        const fd = detail.fieldData || detail.field_data || [];
         const _name = readField(fd, ["full_name", "name"]);
-        const _phone =
-          readField(fd, ["phone_number", "phone", "mobile", "contact"]) || "";
+        const _phone = readField(fd, ["phone_number", "phone", "mobile", "contact"]) || "";
         const _alt = readField(fd, ["alt_phone", "alternate_number"]);
         const _age = readField(fd, ["age"]);
         const _gender = readField(fd, ["gender"]);
         const _loc = readField(fd, ["city", "location"]);
         const _proc = readField(fd, ["procedure", "treatment"]);
         const _reg = readField(fd, ["register_no", "reg_no"]);
-        const _status = (
-          readField(fd, ["status", "lead_status", "bucket"]) || "new"
-        ).toLowerCase();
+        const _status = (readField(fd, ["status", "lead_status", "bucket"]) || detail?.status || "new").toLowerCase();
+        const _notes = readField(fd, ["notes", "call_notes"]) || detail?.notes || "";
 
         setForm({
           name: _name,
@@ -305,17 +282,18 @@ export default function LeadManagement() {
           regNo: _reg,
         });
         setStatus(_status);
-        setNotes(readField(fd, ["notes", "call_notes"]));
+        setNotes(_notes);
         setOpdBooked(
-          ["yes", "true", "booked"].includes(
-            (readField(fd, ["opd_booked"]) || "").toLowerCase()
-          )
+          ["yes", "true", "booked"].includes((readField(fd, ["opd_booked"]) || "").toLowerCase())
         );
 
-        // load server activities
+        // 3) Load activities
         await loadActivities();
+      } catch (e) {
+        console.error("fetchLeadDetail error:", e);
+        if (mounted) setLead(null);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     })();
     return () => {
@@ -339,7 +317,6 @@ export default function LeadManagement() {
   // Build payload for updateLeadDetails(fieldDataUpdates) in merge mode
   const buildFieldUpdates = () => {
     return {
-      // basic
       full_name: form.name,
       register_no: form.regNo,
       phone_number: form.phone,
@@ -348,7 +325,6 @@ export default function LeadManagement() {
       gender: form.gender,
       city: form.location,
       procedure: form.procedure,
-      // state-like flags
       opd_booked: opdBooked ? "yes" : "no",
       lead_status: status,
       call_notes: notes,
@@ -359,17 +335,14 @@ export default function LeadManagement() {
     if (!id) return;
     setSaving(true);
     try {
-      // 1) Update details (merge mode)
       const details = await updateLeadDetails(id, {
         fieldDataUpdates: buildFieldUpdates(),
         notes,
         status,
       });
 
-      // 2) Explicit update of status (top-level)
       await updateLeadStatus(id, { status, notes });
 
-      // 3) Optimistically update local state
       setLead((prev) => ({
         ...prev,
         status: details?.status || status,
@@ -378,7 +351,7 @@ export default function LeadManagement() {
         followUpAt: details?.followUpAt || prev?.followUpAt || null,
       }));
 
-      await loadActivities(); // ⬅️ refresh activity feed
+      await loadActivities();
       alert("✅ Lead saved.");
     } catch (err) {
       const msg =
@@ -392,18 +365,17 @@ export default function LeadManagement() {
       setSaving(false);
     }
   };
+
   // Queue a mobile call task for this lead
   const handleRequestMobileCall = async () => {
     if (!id) return;
 
-    // prefer primary phone; fall back to alt; or ask
     let picked =
       (form.phone && String(form.phone).trim()) ||
       (form.altPhone && String(form.altPhone).trim()) ||
       "";
 
     if (form.phone && form.altPhone) {
-      // Ask which number to use when both exist
       const choice = window.prompt(
         `Choose number to call:\n1) ${form.phone}\n2) ${form.altPhone}\n\nEnter 1 or 2, or type a custom phone number.`
       );
@@ -418,7 +390,6 @@ export default function LeadManagement() {
       picked = custom;
     }
 
-    // basic sanitize/validate
     const num = String(picked).replace(/[^\d+]/g, "");
     if (!num || num.length < 7) {
       alert("❌ Please enter a valid phone number.");
@@ -427,11 +398,9 @@ export default function LeadManagement() {
 
     try {
       setCalling(true);
-      const res = await requestMobileCall(id, num);
-      // Optional: refresh activity to show the new task/activity
+      await requestMobileCall(id, num);
       await loadActivities();
       alert("📞 Call request queued successfully.");
-      // You could also console.log(res) if you want to inspect server response
     } catch (err) {
       const msg =
         err?.response?.data?.error ||
@@ -445,7 +414,66 @@ export default function LeadManagement() {
     }
   };
 
+  // —— Defer/reschedule modal handlers (any date/time) ——
+  const openCallYouLater = () => {
+    setLaterDate(tomorrowYMD());
+    setLaterTime(timeToHHMM(lead?.followUpAt || null));
+    setShowLaterModal(true);
+  };
+  const closeCallYouLater = () => setShowLaterModal(false);
+  const saveCallYouLater = async () => {
+    if (!id) return;
+
+    const ymd = (laterDate || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      alert("❌ Please pick a valid date (YYYY-MM-DD).");
+      return;
+    }
+
+    const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec((laterTime || "").trim());
+    if (!m) {
+      alert("❌ Invalid time. Use HH:mm (e.g., 10:00)");
+      return;
+    }
+    const hour = parseInt(m[1], 10);
+    const minute = parseInt(m[2], 10);
+
+    setDeferring(true);
+    try {
+      const res = await deferLeadToNextDay(id, { date: ymd, hour, minute });
+      setLead((prev) => ({ ...prev, followUpAt: res.followUpAt }));
+      await loadActivities();
+      closeCallYouLater();
+      alert(`📅 Follow-up scheduled for ${ymd} at ${m[1].padStart(2, "0")}:${m[2]}.`);
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || "Failed to schedule";
+      console.error("defer/reschedule error:", err);
+      alert("❌ " + msg);
+    } finally {
+      setDeferring(false);
+    }
+  };
+
   // ----- OP/IP booking handlers -----
+  const [op, setOp] = useState({
+    date: "",
+    time: "",
+    hospital: "",
+    doctor: "",
+    status: "pending",
+    surgery: "",
+    payment: "",
+  });
+  const [ip, setIp] = useState({
+    date: "",
+    time: "",
+    hospital: "",
+    doctor: "",
+    caseType: "",
+    status: "pending",
+    payment: "",
+  });
+
   const handleAddOp = async () => {
     if (!id) return;
     setSaving(true);
@@ -808,6 +836,7 @@ export default function LeadManagement() {
                 />
                 OPD Booked? (Check if yes)
               </label>
+
               <div className="pt-2">
                 <button
                   onClick={handleRequestMobileCall}
@@ -815,11 +844,28 @@ export default function LeadManagement() {
                   className={cls(
                     "inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700",
                     calling ? "opacity-60 cursor-not-allowed" : "hover:bg-emerald-100"
-     )}
-   >
-     <FiPhoneCall /> {calling ? "Queuing..." : "Request Mobile Call"}
-   </button>
- </div>
+                  )}
+                >
+                  <FiPhoneCall /> {calling ? "Queuing..." : "Request Mobile Call"}
+                </button>
+              </div>
+
+              {/* Call you later */}
+              <div className="pt-2 flex items-center justify-between">
+                <div className="text-xs text-gray-600">
+                  Next follow-up:{" "}
+                  <span className="font-medium text-gray-800">
+                    {fmtDateTime(lead?.followUpAt)}
+                  </span>
+                </div>
+                <button
+                  onClick={openCallYouLater}
+                  className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-sm text-violet-700 hover:bg-violet-100"
+                  title="Schedule a follow-up"
+                >
+                  <FiClock /> Call you later
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -1059,7 +1105,7 @@ export default function LeadManagement() {
                   return (
                     <li
                       key={bid}
-                      className="rounded-xl border border-gray-100 p-3 flex items-center justify-between"
+                      className="rounded-2xl border border-gray-100 p-3 flex items-center justify-between"
                     >
                       <div className="text-sm">
                         <div className="font-medium text-gray-900">
@@ -1156,7 +1202,6 @@ export default function LeadManagement() {
                       </div>
                       <p className="text-xs text-gray-500 mt-0.5">{when}</p>
 
-                      {/* Diff viewer */}
                       {(a.diff && (a.diff.before || a.diff.after)) ||
                       (a.meta && Object.keys(a.meta).length) ? (
                         <div className="mt-2">
@@ -1214,6 +1259,59 @@ export default function LeadManagement() {
           )}
         </section>
       </div>
+
+      {/* ---- Call you later modal ---- */}
+      {showLaterModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={closeCallYouLater} />
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-xl">
+            <h4 className="text-base font-semibold text-gray-900 mb-1">Schedule follow-up</h4>
+            <p className="text-sm text-gray-600 mb-4">
+              Pick a <span className="font-medium">date</span> and <span className="font-medium">time</span>.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">Date (YYYY-MM-DD)</label>
+                <input
+                  type="date"
+                  value={laterDate}
+                  onChange={(e) => setLaterDate(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-100"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">Time (HH:mm)</label>
+                <input
+                  type="time"
+                  value={laterTime}
+                  onChange={(e) => setLaterTime(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-100"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                onClick={closeCallYouLater}
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveCallYouLater}
+                disabled={deferring}
+                className={cls(
+                  "inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#ff2e6e] to-[#ff5aa4] text-white px-3 py-2 text-sm shadow",
+                  deferring ? "opacity-60 cursor-not-allowed" : "hover:opacity-95"
+                )}
+              >
+                {deferring ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
