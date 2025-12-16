@@ -232,6 +232,21 @@ export const getAllUsers = async (params = {}) => {
   return arr.map(normalizeUser);
 };
 
+export const createUser = async (userData) => {
+  const { data } = await api.post("/users", userData);
+  return normalizeUser(data?.data || data);
+};
+
+export const updateUser = async (id, userData) => {
+  const { data } = await api.put(`/users/${id}`, userData);
+  return normalizeUser(data?.data || data);
+};
+
+export const deleteUser = async (id) => {
+  const { data } = await api.delete(`/users/${id}`);
+  return data;
+};
+
 /* -------------------------------------------
  * LEADS: Admin endpoints
  * ----------------------------------------- */

@@ -15,7 +15,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import { createPortal } from "react-dom";
-import { getAllUsers, fetchAllLeads } from "../../../utils/api";
+import { getAllUsers, fetchAllLeads, createUser, updateUser, deleteUser } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useSocket } from "../../../contexts/SocketProvider";
 import Loader from "../../../components/Loader";
@@ -269,6 +269,124 @@ const useSoftLeadRefresh = (setter) => {
   }, [setter]);
 };
 
+/* -------- Caller Modal -------- */
+function CallerModal({ open, mode, initialData, onClose, onSubmit }) {
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    state: "", // Added state
+    password: "",
+  });
+
+  useEffect(() => {
+    if (open) {
+      if (mode === "edit" && initialData) {
+        setFormData({
+          name: initialData.name || "",
+          email: initialData.email || "",
+          phone: initialData.phone || "",
+          state: initialData.state || "", // Populate state
+          password: "", // Leave empty to keep unchanged
+        });
+      } else {
+        setFormData({ name: "", email: "", phone: "", state: "", password: "" });
+      }
+    }
+  }, [open, mode, initialData]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit(formData);
+  };
+
+  if (!open) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <h2 className="mb-4 text-lg font-semibold text-gray-800">
+          {mode === "edit" ? "Edit Caller" : "Create Caller"}
+        </h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
+            <input
+              required
+              type="text"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#7d3bd6]"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Email</label>
+            <input
+              required
+              type="email"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#7d3bd6]"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Phone</label>
+              <input
+                required
+                type="text"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#7d3bd6]"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">State</label>
+              <input
+                required
+                type="text"
+                placeholder="e.g. Tamil Nadu"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#7d3bd6]"
+                value={formData.state}
+                onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              Password {mode === "edit" && <span className="text-gray-400 font-normal">(leave blank to keep)</span>}
+            </label>
+            <input
+              type="password"
+              required={mode === "create"}
+              minLength={6}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#7d3bd6]"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+            />
+          </div>
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="rounded-lg bg-[#7d3bd6] px-4 py-2 text-sm font-medium text-white hover:bg-[#6b32b8]"
+            >
+              {mode === "edit" ? "Save Changes" : "Create Caller"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 /* ---------------- page ---------------- */
 export default function Callers() {
   const navigate = useNavigate();
@@ -282,6 +400,59 @@ export default function Callers() {
   const [sortBy, setSortBy] = useState("leadsDesc"); // leadsDesc | nameAsc | uncontactedDesc | updatedDesc
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  // CRUD State
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState("create"); // "create" | "edit"
+  const [selectedCaller, setSelectedCaller] = useState(null);
+
+  // CRUD Handlers
+  const handleCreate = () => {
+    setModalMode("create");
+    setSelectedCaller(null);
+    setModalOpen(true);
+  };
+
+  const handleEdit = (caller) => {
+    setModalMode("edit");
+    setSelectedCaller(caller);
+    setModalOpen(true);
+  };
+
+  const handleDelete = async (caller) => {
+    if (!window.confirm(`Are you sure you want to delete caller "${caller.name}"? This action cannot be undone.`)) return;
+    try {
+      await deleteUser(caller.id);
+      setCallers((prev) => prev.filter((c) => c.id !== caller.id));
+      notify("Caller Deleted", "", { tone: "success" });
+    } catch (err) {
+      console.error(err);
+      notify("Error", "Failed to delete caller", { tone: "error" });
+    }
+  };
+
+  const handleModalSubmit = async (formData) => {
+    try {
+      if (modalMode === "create") {
+        const payload = { ...formData, role: "caller" };
+        const newCaller = await createUser(payload);
+        // Add to list immediately (will be refreshed on next load, but good for UX)
+        setCallers((prev) => [newCaller, ...prev]);
+        notify("Caller Created", `${newCaller.name} added successfully.`, { tone: "success" });
+      } else {
+        const payload = { ...formData };
+        if (!payload.password) delete payload.password; // Don't send empty password
+        const updated = await updateUser(selectedCaller.id, payload);
+        setCallers((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        notify("Caller Updated", "Changes saved successfully.", { tone: "success" });
+      }
+      setModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      const msg = err?.response?.data?.error || err.message || "Operation failed";
+      notify("Error", msg, { tone: "error" });
+    }
+  };
 
   // socket
   const { socket, isConnected } = useSocket();
@@ -518,6 +689,15 @@ export default function Callers() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={handleCreate}
+            className="flex items-center gap-2 rounded-xl bg-[#7d3bd6] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#6b32b8] transition-colors"
+          >
+            <FiUser className="text-lg" />
+            <span>Create Caller</span>
+          </button>
+          <div className="h-6 w-px bg-gray-200 mx-1"></div>
+
           <span className="text-xs text-gray-600">Sort by:</span>
           <select
             value={sortBy}
@@ -581,19 +761,31 @@ export default function Callers() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
                         to={`/admin/callers/${encodeURIComponent(c.id)}`}
-                        className="rounded-xl bg-white px-3 py-1.5 text-xs ring-1 ring-gray-200 hover:bg-gray-50"
+                        className="rounded-xl bg-white px-3 py-1.5 text-xs ring-1 ring-gray-200 hover:bg-gray-50 text-gray-700"
                         title="Open caller dashboard"
                       >
                         View
                       </Link>
                       <button
+                        onClick={() => handleEdit(c)}
+                        className="rounded-xl bg-white px-3 py-1.5 text-xs ring-1 ring-gray-200 hover:bg-gray-50 text-blue-600 font-medium"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(c)}
+                        className="rounded-xl bg-white px-3 py-1.5 text-xs ring-1 ring-gray-200 hover:bg-red-50 text-red-600 font-medium"
+                      >
+                        Delete
+                      </button>
+                      <button
                         onClick={() =>
                           navigate(`/admin/leads?callerId=${encodeURIComponent(c.id)}`)
                         }
-                        className="rounded-xl bg-white px-3 py-1.5 text-xs ring-1 ring-gray-200 hover:bg-gray-50"
+                        className="rounded-xl bg-white px-3 py-1.5 text-xs ring-1 ring-gray-200 hover:bg-gray-50 text-gray-700"
                         title="View this caller's leads"
                       >
-                        View Leads
+                        Leads
                       </button>
                     </div>
                   </td>
@@ -652,6 +844,15 @@ export default function Callers() {
           </div>
         </div>
       </section>
+
+      {/* Modal */}
+      <CallerModal
+        open={modalOpen}
+        mode={modalMode}
+        initialData={selectedCaller}
+        onClose={() => setModalOpen(false)}
+        onSubmit={handleModalSubmit}
+      />
 
       {/* Toasts (socket popups) */}
       <ToastStack toasts={toasts} remove={remove} />
