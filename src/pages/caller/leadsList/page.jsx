@@ -22,6 +22,7 @@ import {
   fetchTomorrowFollowUps,
 } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
+import Loader from "../../../components/Loader";
 
 // ---------- helpers ----------
 const useQuery = () => new URLSearchParams(useLocation().search);
@@ -170,8 +171,8 @@ export default function LeadsList() {
   const dateFilter = isTasksToday
     ? "tasks_today"
     : isTasksTomorrow
-    ? "tasks_tomorrow"
-    : rawDate;
+      ? "tasks_tomorrow"
+      : rawDate;
 
   // In tasks mode, ignore status filter (show all tasks)
   const statusFilter = (isTasksToday || isTasksTomorrow) ? "" : statusFilterRaw;
@@ -253,17 +254,17 @@ export default function LeadsList() {
     const bySearch = !searchQ
       ? byStatus
       : byStatus.filter((r) => {
-          const fd = r.fieldData || [];
-          const name = (readField(fd, ["full_name", "name"]) || "").toLowerCase();
-          const phone =
-            (readField(fd, ["phone_number", "phone", "mobile", "contact"]) || "").toLowerCase();
-          const proc = (readField(fd, ["procedure", "treatment"]) || "").toLowerCase();
-          return (
-            name.includes(searchQ.toLowerCase()) ||
-            phone.includes(searchQ.toLowerCase()) ||
-            proc.includes(searchQ.toLowerCase())
-          );
-        });
+        const fd = r.fieldData || [];
+        const name = (readField(fd, ["full_name", "name"]) || "").toLowerCase();
+        const phone =
+          (readField(fd, ["phone_number", "phone", "mobile", "contact"]) || "").toLowerCase();
+        const proc = (readField(fd, ["procedure", "treatment"]) || "").toLowerCase();
+        return (
+          name.includes(searchQ.toLowerCase()) ||
+          phone.includes(searchQ.toLowerCase()) ||
+          proc.includes(searchQ.toLowerCase())
+        );
+      });
 
     return bySearch;
   }, [rows, statusFilter, searchQ]);
@@ -460,7 +461,7 @@ export default function LeadsList() {
 
           {/* Rows */}
           {loading ? (
-            <div className="py-12 text-center text-sm text-gray-500">Loading…</div>
+            <div className="py-12"><Loader text="Loading leads..." /></div>
           ) : filtered.length ? (
             <div>
               {filtered.map((lead) => (
@@ -475,7 +476,7 @@ export default function LeadsList() {
         </div>
       </section>
 
-  
+
     </main>
   );
 }

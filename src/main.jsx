@@ -2,6 +2,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
 import "./index.css";
 
 import { SocketProvider } from "./contexts/SocketProvider.jsx";
@@ -19,6 +20,7 @@ import LeadManagement from "./pages/caller/leadManagement/page.jsx";
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <SocketProvider>
+      <Toaster position="top-right" reverseOrder={false} />
       <BrowserRouter>
         <Routes>
           {/* Public */}

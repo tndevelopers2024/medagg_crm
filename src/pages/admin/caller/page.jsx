@@ -19,6 +19,7 @@ import {
 import { getAllUsers, fetchAllLeads } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useSocket } from "../../../contexts/SocketProvider";
+import Loader from "../../../components/Loader";
 import { createPortal } from "react-dom";
 
 /* ------------ tiny toast system (socket popups) ------------ */
@@ -27,17 +28,16 @@ function Toast({ toast, onClose, onAction, isExiting }) {
     toast.tone === "success"
       ? "border-emerald-300 bg-emerald-50 text-emerald-800"
       : toast.tone === "warning"
-      ? "border-amber-300 bg-amber-50 text-amber-800"
-      : toast.tone === "error"
-      ? "border-red-300 bg-red-50 text-red-800"
-      : "border-indigo-300 bg-indigo-50 text-indigo-800";
+        ? "border-amber-300 bg-amber-50 text-amber-800"
+        : toast.tone === "error"
+          ? "border-red-300 bg-red-50 text-red-800"
+          : "border-indigo-300 bg-indigo-50 text-indigo-800";
 
   const Icon = toast.icon || FiBell;
   return (
     <div
-      className={`w-[360px] rounded-xl border p-4 shadow-lg ${tone} ${
-        isExiting ? "animate-toastOut" : "animate-toastIn"
-      } transition-all duration-300`}
+      className={`w-[360px] rounded-xl border p-4 shadow-lg ${tone} ${isExiting ? "animate-toastOut" : "animate-toastIn"
+        } transition-all duration-300`}
       style={{
         maxHeight: isExiting ? 0 : "500px",
         opacity: isExiting ? 0 : 1,
@@ -204,17 +204,17 @@ const parseLead = (lead) => {
   // normalize OP/IP arrays (straight from your mongoose schema)
   const opBookings = Array.isArray(lead.opBookings)
     ? lead.opBookings.map((b) => ({
-        ...b,
-        status: (b?.status || "").toLowerCase(),
-        _when: bookingWhen(b),
-      }))
+      ...b,
+      status: (b?.status || "").toLowerCase(),
+      _when: bookingWhen(b),
+    }))
     : [];
   const ipBookings = Array.isArray(lead.ipBookings)
     ? lead.ipBookings.map((b) => ({
-        ...b,
-        status: (b?.status || "").toLowerCase(),
-        _when: bookingWhen(b),
-      }))
+      ...b,
+      status: (b?.status || "").toLowerCase(),
+      _when: bookingWhen(b),
+    }))
     : [];
 
   const op = summarizeBookings(opBookings);
@@ -265,10 +265,10 @@ const pill = (tone) =>
   tone === "red"
     ? "bg-red-50 text-red-700 ring-red-200"
     : tone === "blue"
-    ? "bg-blue-50 text-blue-700 ring-blue-200"
-    : tone === "green"
-    ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-    : "bg-gray-50 text-gray-700 ring-gray-200";
+      ? "bg-blue-50 text-blue-700 ring-blue-200"
+      : tone === "green"
+        ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+        : "bg-gray-50 text-gray-700 ring-gray-200";
 
 const toneLead = (v) => (/hot/i.test(v) ? "red" : /prospect|interested/i.test(v) ? "blue" : "gray");
 
@@ -647,7 +647,7 @@ export default function CallerDashboard() {
 
     try {
       socket.emit?.("caller:presence:request", { userId: id });
-    } catch {}
+    } catch { }
 
     push({
       title: "Live updates ready",
@@ -666,14 +666,14 @@ export default function CallerDashboard() {
   }, [socket, isConnected, id, caller?.name, push, dedupe, throttledRefresh, pushLive]);
 
   /* ------------ UI ------------ */
-  if (loading) return <div className="p-6">Loading…</div>;
+  if (loading) return <Loader fullScreen text="Loading metrics..." />;
   if (!caller) return <div className="p-6">Caller not found.</div>;
 
   const lastSeenLabel = isOnline
     ? "Active"
     : lastSeen
-    ? `Last seen ${timeAgo(lastSeen)}`
-    : "Offline";
+      ? `Last seen ${timeAgo(lastSeen)}`
+      : "Offline";
 
   return (
     <div className="space-y-6">
@@ -707,17 +707,15 @@ export default function CallerDashboard() {
                   {caller.name}
                 </h2>
                 <span
-                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
-                    isOnline
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${isOnline
                       ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
                       : "bg-gray-50 text-gray-700 ring-gray-200"
-                  }`}
+                    }`}
                   title={lastSeenLabel}
                 >
                   <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      isOnline ? "bg-emerald-500" : "bg-gray-400"
-                    }`}
+                    className={`h-1.5 w-1.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-gray-400"
+                      }`}
                   />
                   {lastSeenLabel}
                 </span>
@@ -1003,18 +1001,18 @@ function KpiCard({
     tone === "green"
       ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
       : tone === "red"
-      ? "bg-red-50 text-red-700 ring-red-200"
-      : "bg-gray-50 text-gray-700 ring-gray-200";
+        ? "bg-red-50 text-red-700 ring-red-200"
+        : "bg-gray-50 text-gray-700 ring-gray-200";
   const iconCls =
     iconTone === "green"
       ? "bg-emerald-50 text-emerald-600"
       : iconTone === "red"
-      ? "bg-red-50 text-red-600"
-      : iconTone === "indigo"
-      ? "bg-indigo-50 text-indigo-600"
-      : iconTone === "amber"
-      ? "bg-amber-50 text-amber-600"
-      : "bg-gray-50 text-gray-600";
+        ? "bg-red-50 text-red-600"
+        : iconTone === "indigo"
+          ? "bg-indigo-50 text-indigo-600"
+          : iconTone === "amber"
+            ? "bg-amber-50 text-amber-600"
+            : "bg-gray-50 text-gray-600";
 
   return (
     <div className={`rounded-xl border border-gray-200 bg-white p-4 ${className}`}>

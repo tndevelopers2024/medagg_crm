@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { login } from "../../utils/api";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 import { FcGoogle } from "react-icons/fc";
+import toast from "react-hot-toast";
 
 export default function MedCRMLogin({
   onSuccess,
@@ -14,21 +15,31 @@ export default function MedCRMLogin({
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
 
   const validate = () => {
-    if (!email.trim()) return "Email is required";
-    if (!/^\S+@\S+\.\S+$/.test(email)) return "Enter a valid email";
-    if (!password) return "Password is required";
-    if (password.length < 6) return "Password must be at least 6 characters";
-    return null;
+    if (!email.trim()) {
+      toast.error("Email is required");
+      return false;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      toast.error("Enter a valid email");
+      return false;
+    }
+    if (!password) {
+      toast.error("Password is required");
+      return false;
+    }
+    if (password.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return false;
+    }
+    return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const v = validate();
-    if (v) return setErr(v);
-    setErr("");
+    if (!validate()) return;
+
     setLoading(true);
     try {
       const data = await login(email, password);
@@ -38,6 +49,8 @@ export default function MedCRMLogin({
         localStorage.setItem("token", data.token);
         if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
       }
+
+      toast.success("Login successful!");
 
       if (typeof onSuccess === "function") onSuccess(data);
 
@@ -51,8 +64,11 @@ export default function MedCRMLogin({
       const destination =
         roleDestinations[role] || redirectTo || "/";
 
-      if (router?.push) router.push(destination);
-      else window.location.assign(destination);
+      // Small delay to let the toast be seen before redirect
+      setTimeout(() => {
+        if (router?.push) router.push(destination);
+        else window.location.assign(destination);
+      }, 800);
       // -----------------------------
 
     } catch (error) {
@@ -61,14 +77,14 @@ export default function MedCRMLogin({
         error?.response?.data?.message ||
         error?.message ||
         "Login failed";
-      setErr(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen  py-8 px-4">
+    <main className="min-h-screen grid place-items-center place-content-center py-8 px-4">
       <div className="mx-auto w-full">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Left gradient panel */}
@@ -109,12 +125,6 @@ export default function MedCRMLogin({
                 </p>
               </header>
 
-              {err && (
-                <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 text-sm">
-                  {err}
-                </div>
-              )}
-
               <form onSubmit={handleSubmit} className="space-y-5">
                 {/* Email */}
                 <div>
@@ -126,7 +136,6 @@ export default function MedCRMLogin({
                     autoComplete="email"
                     className="w-full rounded-xl border border-gray-300 focus:border-[#8c3ed8] focus:ring-4 focus:ring-[#8c3ed8]/15 px-3.5 py-3 text-[15px] outline-none"
                     placeholder="you@company.com"
-                    aria-invalid={!!err}
                   />
                 </div>
 
@@ -164,7 +173,6 @@ export default function MedCRMLogin({
                     />
                     Remember me
                   </label>
-
                   <a href="/forgot-password" className="text-sm text-[#ff3f7a] hover:underline">
                     Forgot Password
                   </a>

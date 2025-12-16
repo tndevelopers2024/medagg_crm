@@ -1,6 +1,7 @@
 // src/pages/leads/LeadManagement.jsx
 "use client";
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+import toast from "react-hot-toast";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import {
   FiArrowLeft,
@@ -34,6 +35,7 @@ import {
   requestMobileCall,
 } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
+import Loader from "../../../components/Loader";
 
 // ---------- helpers ----------
 const cls = (...c) => c.filter(Boolean).join(" ");
@@ -352,7 +354,7 @@ export default function LeadManagement() {
       }));
 
       await loadActivities();
-      alert("✅ Lead saved.");
+      toast.success("Lead saved successfully");
     } catch (err) {
       const msg =
         err?.response?.data?.error ||
@@ -360,7 +362,7 @@ export default function LeadManagement() {
         err?.message ||
         "Failed to save lead";
       console.error("Save lead error:", err);
-      alert("❌ " + msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -392,7 +394,7 @@ export default function LeadManagement() {
 
     const num = String(picked).replace(/[^\d+]/g, "");
     if (!num || num.length < 7) {
-      alert("❌ Please enter a valid phone number.");
+      toast.error("Please enter a valid phone number.");
       return;
     }
 
@@ -400,7 +402,7 @@ export default function LeadManagement() {
       setCalling(true);
       await requestMobileCall(id, num);
       await loadActivities();
-      alert("📞 Call request queued successfully.");
+      toast.success("Call request queued successfully.");
     } catch (err) {
       const msg =
         err?.response?.data?.error ||
@@ -408,7 +410,7 @@ export default function LeadManagement() {
         err?.message ||
         "Failed to queue call";
       console.error("requestMobileCall error:", err);
-      alert("❌ " + msg);
+      toast.error(msg);
     } finally {
       setCalling(false);
     }
@@ -426,13 +428,13 @@ export default function LeadManagement() {
 
     const ymd = (laterDate || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
-      alert("❌ Please pick a valid date (YYYY-MM-DD).");
+      toast.error("Please pick a valid date (YYYY-MM-DD).");
       return;
     }
 
     const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec((laterTime || "").trim());
     if (!m) {
-      alert("❌ Invalid time. Use HH:mm (e.g., 10:00)");
+      toast.error("Invalid time. Use HH:mm (e.g., 10:00)");
       return;
     }
     const hour = parseInt(m[1], 10);
@@ -444,11 +446,11 @@ export default function LeadManagement() {
       setLead((prev) => ({ ...prev, followUpAt: res.followUpAt }));
       await loadActivities();
       closeCallYouLater();
-      alert(`📅 Follow-up scheduled for ${ymd} at ${m[1].padStart(2, "0")}:${m[2]}.`);
+      toast.success(`Follow-up scheduled for ${ymd} at ${m[1].padStart(2, "0")}:${m[2]}.`);
     } catch (err) {
       const msg = err?.response?.data?.error || err?.message || "Failed to schedule";
       console.error("defer/reschedule error:", err);
-      alert("❌ " + msg);
+      toast.error(msg);
     } finally {
       setDeferring(false);
     }
@@ -499,8 +501,9 @@ export default function LeadManagement() {
         payment: "",
       });
       await loadActivities();
+      toast.success("OP booking added");
     } catch (e) {
-      alert("❌ Failed to add OP booking");
+      toast.error("Failed to add OP booking");
       console.error(e);
     } finally {
       setSaving(false);
@@ -509,7 +512,7 @@ export default function LeadManagement() {
 
   const handleRemoveOp = async (bid) => {
     if (!id || !bid) return;
-    if (!confirm("Delete this OP booking?")) return;
+    if (!window.confirm("Delete this OP booking?")) return;
     setSaving(true);
     try {
       await removeOpBooking(id, bid);
@@ -517,8 +520,9 @@ export default function LeadManagement() {
         arr.filter((b) => String(b.id || b._id) !== String(bid))
       );
       await loadActivities();
+      toast.success("OP booking removed");
     } catch (e) {
-      alert("❌ Failed to remove OP booking");
+      toast.error("Failed to remove OP booking");
       console.error(e);
     } finally {
       setSaving(false);
@@ -540,8 +544,9 @@ export default function LeadManagement() {
         )
       );
       await loadActivities();
+      toast.success("OP booking marked as done");
     } catch (e) {
-      alert("❌ Failed to update OP booking");
+      toast.error("Failed to update OP booking");
       console.error(e);
     } finally {
       setSaving(false);
@@ -573,8 +578,9 @@ export default function LeadManagement() {
         payment: "",
       });
       await loadActivities();
+      toast.success("IP booking added");
     } catch (e) {
-      alert("❌ Failed to add IP booking");
+      toast.error("Failed to add IP booking");
       console.error(e);
     } finally {
       setSaving(false);
@@ -583,7 +589,7 @@ export default function LeadManagement() {
 
   const handleRemoveIp = async (bid) => {
     if (!id || !bid) return;
-    if (!confirm("Delete this IP booking?")) return;
+    if (!window.confirm("Delete this IP booking?")) return;
     setSaving(true);
     try {
       await removeIpBooking(id, bid);
@@ -591,8 +597,9 @@ export default function LeadManagement() {
         arr.filter((b) => String(b.id || b._id) !== String(bid))
       );
       await loadActivities();
+      toast.success("IP booking removed");
     } catch (e) {
-      alert("❌ Failed to remove IP booking");
+      toast.error("Failed to remove IP booking");
       console.error(e);
     } finally {
       setSaving(false);
@@ -614,27 +621,16 @@ export default function LeadManagement() {
         )
       );
       await loadActivities();
+      toast.success("IP booking marked as done");
     } catch (e) {
-      alert("❌ Failed to update IP booking");
+      toast.error("Failed to update IP booking");
       console.error(e);
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-gray-50">
-        <div className="mx-auto max-w-7xl px-4 py-10">
-          <div className="animate-pulse space-y-4">
-            <div className="h-8 w-64 bg-gray-200 rounded" />
-            <div className="h-64 rounded-2xl bg-white border border-gray-100" />
-            <div className="h-64 rounded-2xl bg-white border border-gray-100" />
-          </div>
-        </div>
-      </main>
-    );
-  }
+  if (loading) return <Loader fullScreen text="Loading lead details..." />;
 
   if (!lead) {
     return (
@@ -1203,7 +1199,7 @@ export default function LeadManagement() {
                       <p className="text-xs text-gray-500 mt-0.5">{when}</p>
 
                       {(a.diff && (a.diff.before || a.diff.after)) ||
-                      (a.meta && Object.keys(a.meta).length) ? (
+                        (a.meta && Object.keys(a.meta).length) ? (
                         <div className="mt-2">
                           <button
                             onClick={() => toggleExpand(aid)}

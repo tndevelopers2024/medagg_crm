@@ -17,9 +17,10 @@ import {
 } from "react-icons/fi";
 import { createPortal } from "react-dom";
 import { FaFacebook } from "react-icons/fa";
-import { fetchAllLeads, getAllUsers, assignLeadsToCaller } from "../../../utils/api";
+import { fetchAllLeads, getAllUsers, assignLeadsToCaller, assignLeadsByLocation } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useSocket } from "../../../contexts/SocketProvider";
+import Loader from "../../../components/Loader";
 
 /* ------------------------ parsing helpers ------------------------ */
 const readField = (fieldData = [], keys = []) => {
@@ -65,8 +66,8 @@ const parseLead = (lead) => {
     (String(lead.campaignId || "").toLowerCase().includes("meta")
       ? "Meta Ads"
       : lead.campaignId
-      ? `Campaign ${lead.campaignId}`
-      : "Unknown");
+        ? `Campaign ${lead.campaignId}`
+        : "Unknown");
 
   return {
     id: lead._id || lead.id || lead.leadId,
@@ -147,10 +148,10 @@ function Toast({ toast, onClose, onAction, isExiting }) {
     toast.tone === "success"
       ? "border-emerald-300 bg-emerald-50 text-emerald-800"
       : toast.tone === "warning"
-      ? "border-amber-300 bg-amber-50 text-amber-800"
-      : toast.tone === "error"
-      ? "border-red-300 bg-red-50 text-red-800"
-      : "border-indigo-300 bg-indigo-50 text-indigo-800";
+        ? "border-amber-300 bg-amber-50 text-amber-800"
+        : toast.tone === "error"
+          ? "border-red-300 bg-red-50 text-red-800"
+          : "border-indigo-300 bg-indigo-50 text-indigo-800";
 
   const Icon =
     toast.icon ||
@@ -158,9 +159,8 @@ function Toast({ toast, onClose, onAction, isExiting }) {
 
   return (
     <div
-      className={`w-[380px] rounded-xl border p-4 shadow-lg ${tone} ${
-        isExiting ? "animate-toastOut" : "animate-toastIn"
-      } transition-all duration-300 transform`}
+      className={`w-[380px] rounded-xl border p-4 shadow-lg ${tone} ${isExiting ? "animate-toastOut" : "animate-toastIn"
+        } transition-all duration-300 transform`}
       style={{
         maxHeight: isExiting ? 0 : "500px",
         opacity: isExiting ? 0 : 1,
@@ -807,15 +807,36 @@ export default function LeadsManagement() {
     });
 
   // assign flows
-  const [assignOpen, setAssignOpen] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
   const [successText, setSuccessText] = useState("");
 
-  const onAssignConfirm = async ({ callerId }) => {
+  /* ---------------- handlers ---------------- */
+  const handleBulkAssignByLocation = async () => {
+    if (!selected.size) return;
+    if (!window.confirm(`Auto-assign ${selected.size} leads based on location match?`)) return;
+
+    setLoading(true);
+    try {
+      const { assignedCount, message } = await assignLeadsByLocation({
+        leadIds: Array.from(selected),
+      });
+      notify("Auto-assigned", message || `Assigned ${assignedCount} leads.`, { tone: "success" });
+      setSelected(new Set());
+      await softRefresh();
+    } catch (err) {
+      console.error(err);
+      notify("Assignment failed", "Could not auto-assign leads.", { tone: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBulkAssign = async ({ callerId }) => {
     try {
       const ids = Array.from(selected);
       await assignLeadsToCaller(ids, callerId);
-      setAssignOpen(false);
+      setShowAssignModal(false);
       setSelected(new Set());
       setSuccessText(`${ids.length} lead${ids.length > 1 ? "s" : ""} successfully assigned.`);
       setSuccessOpen(true);
@@ -870,10 +891,10 @@ export default function LeadsManagement() {
       tone === "red"
         ? "bg-red-100 text-red-600 ring-red-200"
         : tone === "blue"
-        ? "bg-blue-100 text-blue-700 ring-blue-200"
-        : tone === "green"
-        ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
-        : "bg-gray-100 text-gray-700 ring-gray-200";
+          ? "bg-blue-100 text-blue-700 ring-blue-200"
+          : tone === "green"
+            ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
+            : "bg-gray-100 text-gray-700 ring-gray-200";
     return (
       <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${cls}`}>
         {text}
@@ -905,6 +926,8 @@ export default function LeadsManagement() {
   }, [currentPage, totalPages]);
 
   /* ----------------------------- UI ----------------------------- */
+  if (loading) return <Loader fullScreen text="Loading leads..." />;
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -916,13 +939,13 @@ export default function LeadsManagement() {
             dateMode === "Custom" && customFrom && customTo
               ? `${customFrom} → ${customTo}`
               : {
-                  Today: "Today",
-                  Yesterday: "Yesterday",
-                  "7d": "Last 7 Days",
-                  "30d": "Last 30 Days",
-                  All: "All",
-                  Custom: "Custom Range",
-                }[dateMode]
+                Today: "Today",
+                Yesterday: "Yesterday",
+                "7d": "Last 7 Days",
+                "30d": "Last 30 Days",
+                All: "All",
+                Custom: "Custom Range",
+              }[dateMode]
           }
         >
           {(close) => (
@@ -934,9 +957,8 @@ export default function LeadsManagement() {
                     setDateMode(v);
                     if (v !== "Custom") close();
                   }}
-                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                    dateMode === v ? "font-semibold text-[#3b0d66]" : ""
-                  }`}
+                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${dateMode === v ? "font-semibold text-[#3b0d66]" : ""
+                    }`}
                 >
                   {{
                     Today: "Today",
@@ -988,9 +1010,8 @@ export default function LeadsManagement() {
                     setSource(opt);
                     close();
                   }}
-                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                    opt === source ? "font-semibold text-[#3b0d66]" : ""
-                  }`}
+                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${opt === source ? "font-semibold text-[#3b0d66]" : ""
+                    }`}
                 >
                   {opt}
                 </button>
@@ -1013,9 +1034,8 @@ export default function LeadsManagement() {
                     setCallerFilter(o.id);
                     close();
                   }}
-                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                    o.id === callerFilter ? "font-semibold text-[#3b0d66]" : ""
-                  }`}
+                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${o.id === callerFilter ? "font-semibold text-[#3b0d66]" : ""
+                    }`}
                 >
                   {o.name}
                 </button>
@@ -1035,9 +1055,8 @@ export default function LeadsManagement() {
                     setLeadStatus(opt);
                     close();
                   }}
-                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                    opt === leadStatus ? "font-semibold text-[#3b0d66]" : ""
-                  }`}
+                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${opt === leadStatus ? "font-semibold text-[#3b0d66]" : ""
+                    }`}
                 >
                   {opt}
                 </button>
@@ -1056,9 +1075,8 @@ export default function LeadsManagement() {
                     setOpdStatus(opt);
                     close();
                   }}
-                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                    opt === opdStatus ? "font-semibold text-[#3b0d66]" : ""
-                  }`}
+                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${opt === opdStatus ? "font-semibold text-[#3b0d66]" : ""
+                    }`}
                 >
                   {opt}
                 </button>
@@ -1077,9 +1095,8 @@ export default function LeadsManagement() {
                     setIpdStatus(opt);
                     close();
                   }}
-                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                    opt === ipdStatus ? "font-semibold text-[#3b0d66]" : ""
-                  }`}
+                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${opt === ipdStatus ? "font-semibold text-[#3b0d66]" : ""
+                    }`}
                 >
                   {opt}
                 </button>
@@ -1098,9 +1115,8 @@ export default function LeadsManagement() {
                     setDiagnostics(opt);
                     close();
                   }}
-                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                    opt === diagnostics ? "font-semibold text-[#3b0d66]" : ""
-                  }`}
+                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${opt === diagnostics ? "font-semibold text-[#3b0d66]" : ""
+                    }`}
                 >
                   {opt}
                 </button>
@@ -1161,11 +1177,11 @@ export default function LeadsManagement() {
                 const count = l.assignedTo ? callerCounts.get(l.assignedTo) || 0 : 0;
                 const initials = caller?.name
                   ? caller.name
-                      .split(" ")
-                      .map((s) => s[0])
-                      .slice(0, 2)
-                      .join("")
-                      .toUpperCase()
+                    .split(" ")
+                    .map((s) => s[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase()
                   : "—";
                 const isHot = highlight.has(l.id);
                 const timeAgo = (date) => {
@@ -1183,9 +1199,8 @@ export default function LeadsManagement() {
                 return (
                   <tr
                     key={l.id}
-                    className={`border-b last:border-b-0 border-[#ccc] hover:bg-gray-50/50 ${
-                      isHot ? "animate-rowFlash" : ""
-                    }`}
+                    className={`border-b last:border-b-0 border-[#ccc] hover:bg-gray-50/50 ${isHot ? "animate-rowFlash" : ""
+                      }`}
                   >
                     <td className="px-4 py-4">
                       <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleOne(l.id)} />
@@ -1312,13 +1327,22 @@ export default function LeadsManagement() {
             >
               Smart Assign
             </button>
-            <button
-              onClick={() => setAssignOpen(true)}
-              disabled={selected.size === 0}
-              className="rounded-xl bg-[#ff2e6e] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              Assign to callers
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleBulkAssignByLocation()}
+                disabled={selected.size === 0}
+                className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <FiCheckCircle /> Assign Location
+              </button>
+              <button
+                onClick={() => setShowAssignModal(true)}
+                disabled={selected.size === 0}
+                className="flex items-center gap-2 rounded-xl bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+              >
+                Assign Selected
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1358,11 +1382,10 @@ export default function LeadsManagement() {
                 <button
                   key={p}
                   onClick={() => setPage(p)}
-                  className={`min-w-8 rounded-lg border px-2 py-1.5 text-sm ${
-                    p === currentPage
-                      ? "border-[#7d3bd6] text-[#7d3bd6] font-semibold"
-                      : "border-gray-200 hover:bg-gray-50"
-                  }`}
+                  className={`min-w-8 rounded-lg border px-2 py-1.5 text-sm ${p === currentPage
+                    ? "border-[#7d3bd6] text-[#7d3bd6] font-semibold"
+                    : "border-gray-200 hover:bg-gray-50"
+                    }`}
                 >
                   {p}
                 </button>
@@ -1381,11 +1404,11 @@ export default function LeadsManagement() {
 
       {/* Modals */}
       <AssignModal
-        open={assignOpen}
+        open={showAssignModal}
         callers={callers}
         count={selected.size}
-        onClose={() => setAssignOpen(false)}
-        onConfirm={onAssignConfirm}
+        onClose={() => setShowAssignModal(false)}
+        onConfirm={handleBulkAssign}
       />
       <SuccessDialog
         open={successOpen}

@@ -1,5 +1,6 @@
 // src/pages/CallerDashboard.jsx
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import toast from "react-hot-toast";
 import {
   FiPhoneCall,
   FiTarget,
@@ -16,7 +17,7 @@ import {
   FiMessageSquare,
   FiX,
 } from "react-icons/fi";
-import { createPortal } from "react-dom";
+
 import {
   getMe,
   fetchAssignedLeads,
@@ -26,6 +27,7 @@ import {
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useNavigate } from "react-router-dom";
 import { useSocket } from "../../../contexts/SocketProvider";
+import Loader from "../../../components/Loader";
 
 /* -------------------- helpers -------------------- */
 const cls = (...c) => c.filter(Boolean).join(" ");
@@ -248,147 +250,6 @@ const summarizeSocketLead = (p = {}) => {
   return { id, name, phone, email, source, message, createdTime };
 };
 
-function Toast({ toast, onClose, onAction, isExiting }) {
-  const tone =
-    toast.tone === "success"
-      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-      : toast.tone === "warning"
-      ? "border-amber-300 bg-amber-50 text-amber-800"
-      : toast.tone === "error"
-      ? "border-red-300 bg-red-50 text-red-800"
-      : "border-indigo-300 bg-indigo-50 text-indigo-800";
-
-  const Icon = toast.icon || FiBell;
-
-  return (
-    <div
-      className={`w-[380px] rounded-xl border p-4 shadow-lg ${tone} ${
-        isExiting ? "animate-toastOut" : "animate-toastIn"
-      } transition-all duration-300 transform`}
-      style={{
-        maxHeight: isExiting ? 0 : "500px",
-        opacity: isExiting ? 0 : 1,
-        marginBottom: isExiting ? 0 : "0.75rem",
-        overflow: "hidden",
-      }}
-    >
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5">
-          <Icon className="text-lg" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold leading-5 truncate flex items-center gap-2">
-            {toast.title}
-            {toast.leadName && (
-              <span className="text-xs font-normal bg-black/10 px-2 py-0.5 rounded-full">
-                {toast.leadName}
-              </span>
-            )}
-          </div>
-
-          {toast.message ? (
-            <div className="text-sm opacity-90 mt-1 break-words">{toast.message}</div>
-          ) : null}
-
-          {toast.leadDetails && (
-            <div className="mt-3 pt-2 border-t border-current border-opacity-20">
-              <div className="space-y-1.5 text-xs">
-                {toast.leadDetails.phone && (
-                  <div className="flex items-center gap-2">
-                    <FiPhoneCall className="opacity-60" />
-                    <span>{formatPhoneNumber(toast.leadDetails.phone)}</span>
-                  </div>
-                )}
-                {toast.leadDetails.email && toast.leadDetails.email !== "—" && (
-                  <div className="flex items-center gap-2">
-                    <FiUser className="opacity-60" />
-                    <span className="truncate">{toast.leadDetails.email}</span>
-                  </div>
-                )}
-                {toast.leadDetails.source && (
-                  <div className="flex items-center gap-2">
-                    <FiInfo className="opacity-60" />
-                    <span>From: {toast.leadDetails.source}</span>
-                  </div>
-                )}
-                {toast.leadDetails.message && toast.leadDetails.message !== "—" && (
-                  <div className="flex items-center gap-2">
-                    <FiMessageSquare className="opacity-60" />
-                    <span className="line-clamp-2">{toast.leadDetails.message}</span>
-                  </div>
-                )}
-                {toast.leadDetails.time && (
-                  <div className="flex items-center gap-2 text-xs opacity-70">
-                    <FiCalendar className="opacity-60" />
-                    <span>{toast.leadDetails.time}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {toast.action ? (
-            <button
-              onClick={onAction}
-              className="mt-3 text-sm font-medium bg-black/10 hover:bg-black/20 px-3 py-1.5 rounded-md transition-colors"
-            >
-              {toast.action.label}
-            </button>
-          ) : null}
-        </div>
-        <button
-          onClick={onClose}
-          className="rounded-full p-1 hover:bg-black/10 transition"
-          aria-label="Close"
-          title="Close"
-        >
-          <FiX />
-        </button>
-      </div>
-    </div>
-  );
-}
-const ToastPortal = ({ children }) => (typeof document === "undefined" ? null : createPortal(children, document.body));
-function ToastStack({ toasts, remove }) {
-  return (
-    <ToastPortal>
-      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col-reverse gap-3">
-        {toasts.map((t) => (
-          <Toast
-            key={t.id}
-            toast={t}
-            onClose={() => remove(t.id)}
-            onAction={() => {
-              if (typeof t.action?.onClick === "function") t.action.onClick();
-              remove(t.id);
-            }}
-            isExiting={t.isExiting}
-          />
-        ))}
-      </div>
-    </ToastPortal>
-  );
-}
-function useToasts() {
-  const [toasts, setToasts] = useState([]);
-  const remove = useCallback((id) => {
-    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, isExiting: true } : t)));
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 300);
-  }, []);
-  const push = useCallback(
-    (t) => {
-      const id =
-        (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
-        `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const timeout = t.timeout ?? 10000;
-      setToasts((prev) => [{ id, ...t }, ...prev]);
-      if (timeout > 0) setTimeout(() => remove(id), timeout);
-    },
-    [remove]
-  );
-  return { toasts, push, remove };
-}
-
 /* -------------------- socket helpers (dedupe + refresh) -------------------- */
 const useEventDeduper = (windowMs = 8000) => {
   const seenRef = useRef(new Map());
@@ -440,7 +301,6 @@ export default function CallersDashboard() {
 
   // socket + toasts
   const { socket, isConnected } = useSocket();
-  const { toasts, push, remove } = useToasts();
   const dedupe = useEventDeduper(8000);
   const softRefreshAssigned = useSoftAssignedRefresh(setLeads);
 
@@ -484,27 +344,28 @@ export default function CallersDashboard() {
   }, []);
 
   // toast helper
+  // toast helper (mapped to react-hot-toast)
   const notify = useCallback(
     (title, message, opts = {}) => {
-      const withTime = (t) => (t instanceof Date && !isNaN(t) ? t.toLocaleTimeString() : "Just now");
-      push({
-        title,
-        message,
-        icon: opts.icon || FiBell,
-        tone: opts.tone || "info",
-        timeout: opts.timeout ?? 10000,
-        leadName: opts.leadName,
-        leadDetails: opts.leadDetails && {
-          ...opts.leadDetails,
-          time: opts.leadDetails.time || withTime(new Date()),
-        },
-        action: opts.action || {
-          label: "Open My Leads",
-          onClick: () => navigate("/caller/leads"),
-        },
-      });
+      const { leadName, tone } = opts;
+      const fullMsg = (
+        <div>
+          <b className="block">{title}</b>
+          <span className="block text-sm">{message}</span>
+          {leadName && <span className="block text-xs mt-1 opacity-75">Lead: {leadName}</span>}
+        </div>
+      );
+
+      if (tone === "success") {
+        toast.success(fullMsg, { duration: 5000 });
+      } else if (tone === "error") {
+        toast.error(fullMsg, { duration: 5000 });
+      } else {
+        // default/info
+        toast(fullMsg, { icon: opts.icon ? <opts.icon /> : "ℹ️", duration: 5000 });
+      }
     },
-    [push, navigate]
+    []
   );
 
   // socket → popups + data refresh
@@ -731,24 +592,7 @@ export default function CallersDashboard() {
   };
 
   /* -------------------- UI -------------------- */
-  if (loading) {
-    return (
-      <main className="">
-        <div className="mx-autol px-4 py-10">
-          <div className="animate-pulse space-y-4">
-            <div className="h-8 w-64 bg-gray-200 rounded" />
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-28 rounded-2xl bg-white border border-gray-100 shadow-sm">
-                  <div className="h-full bg-gray-100/50 rounded-2xl" />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </main>
-    );
-  }
+  if (loading) return <Loader fullScreen text="Loading dashboard..." />;
 
   if (err) {
     return (
@@ -775,22 +619,22 @@ export default function CallersDashboard() {
             accent="violet"
             onClick={() => navigate("/caller/leads?date=today&status=new")}
           />
-         <StatCard
-   title={"Today's Task"}
-   value={computed.tasksTodayCount}
-   sub={`${computed.tasksTodayCount} due`}
-   icon={<FiTarget />}
-   accent="pink"
-   onClick={() => navigate("/caller/leads?date=tasks_today&view=tasks_today")}
- />
+          <StatCard
+            title={"Today's Task"}
+            value={computed.tasksTodayCount}
+            sub={`${computed.tasksTodayCount} due`}
+            icon={<FiTarget />}
+            accent="pink"
+            onClick={() => navigate("/caller/leads?date=tasks_today&view=tasks_today")}
+          />
           <StatCard
             title={"Tomorrow's Task"}
             value={computed.tasksTomorrowCount}
             sub={`${computed.tasksTomorrowCount} scheduled`}
             icon={<FiCalendar />}
             accent="sky"
-    onClick={() => navigate("/caller/leads?date=tasks_tomorrow&view=tasks_tomorrow")}
-  />
+            onClick={() => navigate("/caller/leads?date=tasks_tomorrow&view=tasks_tomorrow")}
+          />
           <StatCard
             title="OPD Booked Today"
             value={computed.opdBookedToday}
@@ -980,26 +824,7 @@ export default function CallersDashboard() {
         </span>
       </button>
 
-      {/* Socket Toasts */}
-      <ToastStack toasts={toasts} remove={remove} />
 
-      {/* Animations / clamp */}
-      <style>{`
-        @keyframes toastIn {
-          0% { transform: translateX(100%); opacity: 0; }
-          100% { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes toastOut {
-          0% { transform: translateX(0); opacity: 1; max-height: 500px; margin-bottom: 0.75rem; }
-          50% { opacity: 0; }
-          100% { transform: translateX(100%); opacity: 0; max-height: 0; margin-bottom: 0; }
-        }
-        .animate-toastIn { animation: toastIn 0.3s ease-out forwards; }
-        .animate-toastOut { animation: toastOut 0.3s ease-in forwards; }
-        .line-clamp-2 {
-          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-        }
-      `}</style>
     </main>
   );
 }

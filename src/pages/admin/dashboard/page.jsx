@@ -18,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { fetchTodayLeads, fetchAllLeads, getAllUsers } from "../../../utils/api";
 import { useSocket } from "../../../contexts/SocketProvider";
+import Loader from "../../../components/Loader";
 
 /* ---------------- helpers ---------------- */
 const isSameDay = (a, b) =>
@@ -132,26 +133,25 @@ function Toast({ toast, onClose, onAction, isExiting }) {
     toast.tone === "success"
       ? "border-emerald-300 bg-emerald-50 text-emerald-800"
       : toast.tone === "warning"
-      ? "border-amber-300 bg-amber-50 text-amber-800"
-      : toast.tone === "error"
-      ? "border-red-300 bg-red-50 text-red-800"
-      : "border-indigo-300 bg-indigo-50 text-indigo-800";
+        ? "border-amber-300 bg-amber-50 text-amber-800"
+        : toast.tone === "error"
+          ? "border-red-300 bg-red-50 text-red-800"
+          : "border-indigo-300 bg-indigo-50 text-indigo-800";
 
   const Icon =
     toast.icon ||
     (toast.tone === "success"
       ? FiCheckCircle
       : toast.tone === "warning"
-      ? FiAlertTriangle
-      : toast.tone === "error"
-      ? FiAlertTriangle
-      : FiInfo);
+        ? FiAlertTriangle
+        : toast.tone === "error"
+          ? FiAlertTriangle
+          : FiInfo);
 
   return (
     <div
-      className={`w-[380px] rounded-xl border p-4 shadow-lg ${tone} ${
-        isExiting ? "animate-toastOut" : "animate-toastIn"
-      } transition-all duration-300 transform`}
+      className={`w-[380px] rounded-xl border p-4 shadow-lg ${tone} ${isExiting ? "animate-toastOut" : "animate-toastIn"
+        } transition-all duration-300 transform`}
       style={{
         maxHeight: isExiting ? 0 : "500px",
         opacity: isExiting ? 0 : 1,
@@ -323,10 +323,10 @@ function StatsCard({ title, value, icon, tone = "gray", subtitle = "From all sou
     tone === "amber"
       ? "bg-amber-50 text-amber-600"
       : tone === "red"
-      ? "bg-red-50 text-red-600"
-      : tone === "indigo"
-      ? "bg-indigo-50 text-indigo-600"
-      : "bg-gray-50 text-gray-600";
+        ? "bg-red-50 text-red-600"
+        : tone === "indigo"
+          ? "bg-indigo-50 text-indigo-600"
+          : "bg-gray-50 text-gray-600";
 
   return (
     <article className="rounded-xl bg-white p-4 ring-1 ring-gray-200 shadow-sm">
@@ -413,7 +413,7 @@ export default function Dashboard() {
           time: options.leadDetails?.time || toTimeString(new Date()),
         },
       });
-      refresh().catch(() => {});
+      refresh().catch(() => { });
     };
 
     const onLeadCreated = (p = {}) => {
@@ -564,6 +564,8 @@ export default function Dashboard() {
     [parsedLeads]
   );
 
+  if (loading) return <Loader fullScreen text="Loading dashboard..." />;
+
   return (
     <>
       <div className="space-y-8">
@@ -614,11 +616,10 @@ export default function Dashboard() {
                       <td className="px-4 py-4">{l.source}</td>
                       <td className="px-4 py-4">
                         <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
-                            l.assignedTo
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${l.assignedTo
                               ? "bg-violet-50 text-violet-700 ring-violet-200"
                               : "bg-amber-50 text-amber-700 ring-amber-200"
-                          }`}
+                            }`}
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-current" />
                           {l.assignedTo ? "Assigned" : "Unassigned"}

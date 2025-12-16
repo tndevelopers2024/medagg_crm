@@ -15,7 +15,7 @@ export {
 export const BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
   (window.location.hostname === "localhost"
-    ? "http://localhost:5000/api/v1"
+    ? "http://localhost:5013/api/v1"
     : "https://medagg.online/api/v1");
 
 const api = axios.create({
@@ -27,7 +27,7 @@ api.interceptors.request.use((config) => {
   try {
     const token = localStorage.getItem("token");
     if (token) config.headers.Authorization = `Bearer ${token}`;
-  } catch {}
+  } catch { }
   return config;
 });
 
@@ -250,6 +250,11 @@ export const fetchAllLeads = async (params = {}) => {
     count: data?.count ?? rows.length,
     leads: rows.map(normalizeLead),
   };
+};
+
+export const assignLeadsByLocation = async (payload) => {
+  const res = await api.post("/leads/assign-location", payload);
+  return res.data;
 };
 
 // Today's leads (admin)

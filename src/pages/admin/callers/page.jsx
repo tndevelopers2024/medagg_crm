@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import { getAllUsers, fetchAllLeads } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useSocket } from "../../../contexts/SocketProvider";
+import Loader from "../../../components/Loader";
 
 /* ---------------- small utils ---------------- */
 const fmtAgo = (d) => {
@@ -84,10 +85,10 @@ function Toast({ toast, onClose, onAction, isExiting }) {
     toast.tone === "success"
       ? "border-emerald-300 bg-emerald-50 text-emerald-800"
       : toast.tone === "warning"
-      ? "border-amber-300 bg-amber-50 text-amber-800"
-      : toast.tone === "error"
-      ? "border-red-300 bg-red-50 text-red-800"
-      : "border-indigo-300 bg-indigo-50 text-indigo-800";
+        ? "border-amber-300 bg-amber-50 text-amber-800"
+        : toast.tone === "error"
+          ? "border-red-300 bg-red-50 text-red-800"
+          : "border-indigo-300 bg-indigo-50 text-indigo-800";
 
   const Icon =
     toast.icon ||
@@ -95,9 +96,8 @@ function Toast({ toast, onClose, onAction, isExiting }) {
 
   return (
     <div
-      className={`w-[380px] rounded-xl border p-4 shadow-lg ${tone} ${
-        isExiting ? "animate-toastOut" : "animate-toastIn"
-      } transition-all duration-300 transform`}
+      className={`w-[380px] rounded-xl border p-4 shadow-lg ${tone} ${isExiting ? "animate-toastOut" : "animate-toastIn"
+        } transition-all duration-300 transform`}
       style={{
         maxHeight: isExiting ? 0 : "500px",
         opacity: isExiting ? 0 : 1,
@@ -500,6 +500,8 @@ export default function Callers() {
   const start = (currentPage - 1) * pageSize;
   const end = Math.min(start + pageSize, total);
   const pageRows = filtered.slice(start, end);
+
+  if (loading) return <Loader fullScreen text="Loading callers..." />;
 
   return (
     <div className="space-y-6">

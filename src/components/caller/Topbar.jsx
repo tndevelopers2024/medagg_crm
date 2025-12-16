@@ -65,14 +65,14 @@ export default function Topbar() {
 
         {/* Right */}
         <div className="flex items-center gap-2 md:gap-3">
-          <button
+          {/* <button
           style={{padding:6, borderRadius: "50%"}}
             className="relative inline-flex p-0 items-center justify-center rounded-full border border-[#e2deea] bg-white hover:bg-gray-50"
             aria-label="Notifications"
           >
             <FiBell className="text-[18px]" />
             <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[#6b5aa6]" />
-          </button>
+          </button> */}
           <img
             src={avatarSrc}
             alt="User avatar"
