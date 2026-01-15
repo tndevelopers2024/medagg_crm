@@ -631,4 +631,157 @@ export const requestMobileCall = async (leadId, phoneNumber) => {
   return data;
 };
 
+/* -------------------------------------------
+ * DUPLICATE MANAGEMENT
+ * ----------------------------------------- */
+export const fetchDuplicates = async () => {
+  const { data } = await api.get("/leads/duplicates");
+  return data; // { success, count, data: [...] }
+};
+
+export const mergeLeads = async (payload) => {
+  const { data } = await api.post("/leads/merge", payload);
+  return data; // { success, message, primaryId }
+};
+
+export const bulkUpdateLeads = async (payload) => {
+  const { data } = await api.post("/leads/bulk-update", payload);
+  return data;
+};
+
+/* -------------------------------------------
+ * CAMPAIGNS
+ * ----------------------------------------- */
+export const fetchCampaigns = async () => {
+  const { data } = await api.get("/campaigns");
+  return data; // { success, count, data: [...] }
+};
+
+export const createCampaign = async (payload) => {
+  const { data } = await api.post("/campaigns", payload);
+  return data; // { success, data }
+};
+
+export const syncCampaign = async (id) => {
+  const { data } = await api.post(`/campaigns/${id}/sync`);
+  return data; // { success, message, count }
+};
+
+export const uploadCampaignLeads = async (id, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await api.post(`/campaigns/${id}/upload`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data; // { success, message, data: { uploadId, totalLeads, successCount, errorCount, errors } }
+};
+
+export const fetchUploadHistory = async (id) => {
+  const { data } = await api.get(`/campaigns/${id}/uploads`);
+  return data; // { success, count, data: [...] }
+};
+
+export const checkDuplicates = async (leads) => {
+  const { data } = await api.post(`/campaigns/check-duplicates`, { leads });
+  return data; // { success, duplicates: [{type, value}] }
+};
+
+export const bulkImportLeads = async (payload) => {
+  // payload: { leads, campaignId, callers }
+  const { data } = await api.post(`/campaigns/bulk-import`, payload);
+  return data; // { success, message, count }
+};
+
+// Create a new lead (manual)
+export const createLead = async (payload) => {
+  const { data } = await api.post("/leads", payload);
+  const raw = data?.data || data?.lead || {};
+  return normalizeLead(raw);
+};
+
+/* -------------------------------------------
+ * LEAD FIELD CONFIGURATION
+ * ----------------------------------------- */
+export const fetchLeadFields = async (params = {}) => {
+  const { data } = await api.get("/lead-fields", { params });
+  return data; // { success, count, data: [...] }
+};
+
+export const createLeadField = async (payload) => {
+  const { data } = await api.post("/lead-fields", payload);
+  return data; // { success, data }
+};
+
+export const updateLeadField = async (id, payload) => {
+  const { data } = await api.put(`/lead-fields/${id}`, payload);
+  return data; // { success, data }
+};
+
+export const deleteLeadField = async (id) => {
+  const { data } = await api.delete(`/lead-fields/${id}`);
+  return data; // { success, message }
+};
+
+export const reorderLeadFields = async (fieldOrders) => {
+  const { data } = await api.patch("/lead-fields/reorder", { fieldOrders });
+  return data; // { success, data: [...] }
+};
+
+/* -------------------------------------------
+ * BOOKING FIELD CONFIGURATION
+ * ----------------------------------------- */
+export const fetchBookingFields = async (params = {}) => {
+  const { data } = await api.get("/booking-fields", { params });
+  return data; // { success, count, data: [...] }
+};
+
+export const createBookingField = async (payload) => {
+  const { data } = await api.post("/booking-fields", payload);
+  return data; // { success, data }
+};
+
+export const updateBookingField = async (id, payload) => {
+  const { data } = await api.put(`/booking-fields/${id}`, payload);
+  return data; // { success, data }
+};
+
+export const deleteBookingField = async (id) => {
+  const { data } = await api.delete(`/booking-fields/${id}`);
+  return data; // { success, message }
+};
+
+export const reorderBookingFields = async (fieldOrders) => {
+  const { data } = await api.patch("/booking-fields/reorder", { fieldOrders });
+  return data; // { success, data: [...] }
+};
+
+/* -------------------------------------------
+ * LEAD STAGE CONFIGURATION
+ * ----------------------------------------- */
+export const fetchLeadStages = async (params = {}) => {
+  const { data } = await api.get("/lead-stages", { params });
+  return data; // { success, count, data: [...] }
+};
+
+export const createLeadStage = async (payload) => {
+  const { data } = await api.post("/lead-stages", payload);
+  return data; // { success, data }
+};
+
+export const updateLeadStage = async (id, payload) => {
+  const { data } = await api.put(`/lead-stages/${id}`, payload);
+  return data; // { success, data }
+};
+
+export const deleteLeadStage = async (id) => {
+  const { data } = await api.delete(`/lead-stages/${id}`);
+  return data; // { success, message }
+};
+
+export const reorderLeadStages = async (stageOrders) => {
+  const { data } = await api.patch("/lead-stages/reorder", { stageOrders });
+  return data; // { success, data: [...] }
+};
+
 export const apiClient = api;
+

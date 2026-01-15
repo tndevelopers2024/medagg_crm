@@ -14,6 +14,7 @@ import {
   FiTrash2,
   FiCheckCircle,
   FiRefreshCcw,
+  FiShare2,
   FiList,
   FiActivity,
   FiUser,
@@ -33,9 +34,13 @@ import {
   fetchLeadActivities,
   BOOKING_STATUSES,
   requestMobileCall,
+  fetchLeadFields,
+  fetchBookingFields,
+  fetchLeadStages,
 } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import Loader from "../../../components/Loader";
+import { DynamicField, fieldDataToObject, objectToFieldData } from "../../../components/DynamicField";
 
 // ---------- helpers ----------
 const cls = (...c) => c.filter(Boolean).join(" ");
@@ -199,17 +204,15 @@ export default function LeadManagement() {
 
   const [laterDate, setLaterDate] = useState("");
 
-  // form states (left card)
-  const [form, setForm] = useState({
-    name: "",
-    regNo: "",
-    phone: "",
-    altPhone: "",
-    age: "",
-    gender: "",
-    location: "",
-    procedure: "",
-  });
+  // Dynamic field configurations
+  const [leadFields, setLeadFields] = useState([]);
+  const [opFields, setOpFields] = useState([]);
+  const [ipFields, setIpFields] = useState([]);
+  const [leadStages, setLeadStages] = useState([]);
+  const [fieldsLoading, setFieldsLoading] = useState(true);
+
+  // Dynamic lead data (replaces hardcoded form)
+  const [leadData, setLeadData] = useState({});
 
   // right card
   const [status, setStatus] = useState("new");
@@ -245,6 +248,30 @@ export default function LeadManagement() {
     }
   }, [id]);
 
+  // Load field configurations
+  useEffect(() => {
+    const loadConfigs = async () => {
+      try {
+        setFieldsLoading(true);
+        const [leadRes, opRes, ipRes, stagesRes] = await Promise.all([
+          fetchLeadFields({ active: "true" }),
+          fetchBookingFields({ type: "OP", active: "true" }),
+          fetchBookingFields({ type: "IP", active: "true" }),
+          fetchLeadStages({ active: "true" }),
+        ]);
+        if (leadRes.success) setLeadFields(leadRes.data);
+        if (opRes.success) setOpFields(opRes.data);
+        if (ipRes.success) setIpFields(ipRes.data);
+        if (stagesRes.success) setLeadStages(stagesRes.data);
+      } catch (err) {
+        console.error("Error loading field configs:", err);
+      } finally {
+        setFieldsLoading(false);
+      }
+    };
+    loadConfigs();
+  }, []);
+
   // —— load the lead ONLY through fetchLeadDetail ——
   useEffect(() => {
     let mounted = true;
@@ -260,36 +287,18 @@ export default function LeadManagement() {
         setOpBookings(detail.opBookings || []);
         setIpBookings(detail.ipBookings || []);
 
-        // 2) Populate UI from fieldData
-        const fd = detail.fieldData || detail.field_data || [];
-        const _name = readField(fd, ["full_name", "name"]);
-        const _phone = readField(fd, ["phone_number", "phone", "mobile", "contact"]) || "";
-        const _alt = readField(fd, ["alt_phone", "alternate_number"]);
-        const _age = readField(fd, ["age"]);
-        const _gender = readField(fd, ["gender"]);
-        const _loc = readField(fd, ["city", "location"]);
-        const _proc = readField(fd, ["procedure", "treatment"]);
-        const _reg = readField(fd, ["register_no", "reg_no"]);
-        const _status = (readField(fd, ["status", "lead_status", "bucket"]) || detail?.status || "new").toLowerCase();
-        const _notes = readField(fd, ["notes", "call_notes"]) || detail?.notes || "";
+        // 2) Convert fieldData to object for editing
+        const fieldDataObj = fieldDataToObject(detail.fieldData || []);
+        setLeadData(fieldDataObj);
 
-        setForm({
-          name: _name,
-          phone: _phone,
-          altPhone: _alt,
-          age: _age,
-          gender: _gender,
-          location: _loc,
-          procedure: _proc,
-          regNo: _reg,
-        });
-        setStatus(_status);
-        setNotes(_notes);
+        // 3) Set status and notes
+        setStatus(detail?.status || "new");
+        setNotes(detail?.notes || "");
         setOpdBooked(
-          ["yes", "true", "booked"].includes((readField(fd, ["opd_booked"]) || "").toLowerCase())
+          ["yes", "true", "booked"].includes((fieldDataObj.opd_booked || "").toLowerCase())
         );
 
-        // 3) Load activities
+        // 4) Load activities
         await loadActivities();
       } catch (e) {
         console.error("fetchLeadDetail error:", e);
@@ -303,34 +312,31 @@ export default function LeadManagement() {
     };
   }, [id, loadActivities]);
 
-  const statusOptions = useMemo(
-    () => [
-      { value: "new", label: "New" },
-      { value: "hot", label: "Hot" },
-      { value: "hot-ip", label: "HOT - IP" },
-      { value: "prospective", label: "Prospective" },
-      { value: "recapture", label: "Recapture" },
-      { value: "dnp", label: "DNP" },
-      { value: "opd_booked", label: "OPD Booked" },
-    ],
-    []
-  );
-
-  // Build payload for updateLeadDetails(fieldDataUpdates) in merge mode
-  const buildFieldUpdates = () => {
-    return {
-      full_name: form.name,
-      register_no: form.regNo,
-      phone_number: form.phone,
-      alt_phone: form.altPhone,
-      age: form.age,
-      gender: form.gender,
-      city: form.location,
-      procedure: form.procedure,
-      opd_booked: opdBooked ? "yes" : "no",
-      lead_status: status,
-      call_notes: notes,
+  const statusOptions = useMemo(() => {
+    // Group stages by category
+    const grouped = {
+      initial: [],
+      active: [],
+      won: [],
+      lost: [],
     };
+
+    leadStages.forEach((stage) => {
+      if (grouped[stage.stageCategory]) {
+        grouped[stage.stageCategory].push({
+          value: stage.stageName,
+          label: stage.displayLabel,
+          color: stage.color,
+          category: stage.stageCategory,
+        });
+      }
+    });
+
+    return grouped;
+  }, [leadStages]);
+
+  const handleLeadFieldChange = (fieldName, value) => {
+    setLeadData((prev) => ({ ...prev, [fieldName]: value }));
   };
 
   const handleSave = async () => {
@@ -338,7 +344,7 @@ export default function LeadManagement() {
     setSaving(true);
     try {
       const details = await updateLeadDetails(id, {
-        fieldDataUpdates: buildFieldUpdates(),
+        fieldDataUpdates: leadData,
         notes,
         status,
       });
@@ -372,19 +378,18 @@ export default function LeadManagement() {
   const handleRequestMobileCall = async () => {
     if (!id) return;
 
-    let picked =
-      (form.phone && String(form.phone).trim()) ||
-      (form.altPhone && String(form.altPhone).trim()) ||
-      "";
+    const phone = leadData.phone_number || leadData.phone || "";
+    const altPhone = leadData.alt_phone || leadData.alternate_number || "";
+    let picked = (phone && String(phone).trim()) || (altPhone && String(altPhone).trim()) || "";
 
-    if (form.phone && form.altPhone) {
+    if (phone && altPhone) {
       const choice = window.prompt(
-        `Choose number to call:\n1) ${form.phone}\n2) ${form.altPhone}\n\nEnter 1 or 2, or type a custom phone number.`
+        `Choose number to call:\n1) ${phone}\n2) ${altPhone}\n\nEnter 1 or 2, or type a custom phone number.`
       );
       if (!choice) return;
 
-      if (choice === "1") picked = form.phone;
-      else if (choice === "2") picked = form.altPhone;
+      if (choice === "1") picked = phone;
+      else if (choice === "2") picked = altPhone;
       else picked = choice;
     } else if (!picked) {
       const custom = window.prompt("Enter a phone number to call:");
@@ -414,6 +419,37 @@ export default function LeadManagement() {
     } finally {
       setCalling(false);
     }
+  };
+
+  const handleShareLead = () => {
+    if (!lead) return;
+
+    const name = leadData.full_name || leadData.name || "Unknown";
+    const statusLabel = leadStages.find(s => s.stageName === status)?.displayLabel || status || "New";
+    const createdDate = lead.createdTime ? new Date(lead.createdTime).toLocaleString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: '2-digit'
+    }) : "N/A";
+
+    const leadUrl = `${window.location.origin}/caller/leads/${id}`;
+
+    const shareText = `Checkout this lead in Medagg CRM\n\nName: ${name}\nStatus: ${statusLabel}\nAcquired On: ${createdDate}\nWorkspace: Medagg Ventures\n\nLink: ${leadUrl}`;
+
+    // Copy to clipboard
+    navigator.clipboard.writeText(shareText).then(() => {
+      toast.success("Lead details copied to clipboard!");
+
+      // Open WhatsApp share (optional)
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+      window.open(whatsappUrl, '_blank');
+    }).catch(() => {
+      toast.error("Failed to copy to clipboard");
+    });
   };
 
   // —— Defer/reschedule modal handlers (any date/time) ——
@@ -670,6 +706,14 @@ export default function LeadManagement() {
 
             <div className="flex items-center gap-2">
               <button
+                onClick={handleShareLead}
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-gray-700 hover:bg-gray-50"
+                title="Share Lead"
+              >
+                <FiShare2 />
+                <span className="hidden md:inline">Share</span>
+              </button>
+              <button
                 onClick={handleRequestMobileCall}
                 disabled={calling}
                 className={cls(
@@ -726,96 +770,72 @@ export default function LeadManagement() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label="Customer Name"
-                value={form.name}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, name: e.target.value }))
-                }
-                placeholder="e.g. Rajesh Kumar"
-              />
-              <Input
-                label="Register Number"
-                value={form.regNo}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, regNo: e.target.value }))
-                }
-                placeholder="e.g. REG1024"
-              />
-              <Input
-                label="Mobile Number"
-                value={form.phone}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, phone: e.target.value }))
-                }
-                placeholder="+91 98765 43210"
-              />
-              <Input
-                label="Alternate Number"
-                value={form.altPhone}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, altPhone: e.target.value }))
-                }
-                placeholder="+91 9xxxxx"
-              />
-              <Input
-                label="Age"
-                value={form.age}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, age: e.target.value }))
-                }
-                placeholder="48"
-              />
-              <Select
-                label="Gender"
-                value={form.gender}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, gender: e.target.value }))
-                }
-                options={[
-                  { value: "", label: "Select" },
-                  { value: "male", label: "Male" },
-                  { value: "female", label: "Female" },
-                  { value: "other", label: "Other" },
-                ]}
-              />
-              <Input
-                label="Location"
-                value={form.location}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, location: e.target.value }))
-                }
-                placeholder="Chennai"
-              />
-              <Input
-                label="Procedure"
-                value={form.procedure}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, procedure: e.target.value }))
-                }
-                placeholder="Prostate Artery Embolization"
-              />
-            </div>
+            {fieldsLoading ? (
+              <div className="col-span-2 text-center py-8 text-gray-500">
+                Loading fields...
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {leadFields.map((field) => (
+                  <DynamicField
+                    key={field._id}
+                    field={field}
+                    value={leadData[field.fieldName]}
+                    onChange={handleLeadFieldChange}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Right status + notes */}
           <div className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
             <div className="grid grid-cols-1 gap-4">
-              <Select
-                label="Status"
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                options={[
-                  { value: "new", label: "New" },
-                  { value: "hot", label: "Hot" },
-                  { value: "hot-ip", label: "HOT - IP" },
-                  { value: "prospective", label: "Prospective" },
-                  { value: "recapture", label: "Recapture" },
-                  { value: "dnp", label: "DNP" },
-                  { value: "opd_booked", label: "OPD Booked" },
-                ]}
-              />
+              <div className="space-y-1">
+                <label className="text-xs text-gray-600">Status</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-100"
+                >
+                  {statusOptions.initial?.length > 0 && (
+                    <optgroup label="Initial">
+                      {statusOptions.initial.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {statusOptions.active?.length > 0 && (
+                    <optgroup label="Active">
+                      {statusOptions.active.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {statusOptions.won?.length > 0 && (
+                    <optgroup label="Won">
+                      {statusOptions.won.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {statusOptions.lost?.length > 0 && (
+                    <optgroup label="Lost">
+                      {statusOptions.lost.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
 
               <Textarea
                 label="Call Notes"

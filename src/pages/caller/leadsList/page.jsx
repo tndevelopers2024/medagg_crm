@@ -20,6 +20,7 @@ import {
   fetchLeadsByDate,
   fetchTodayFollowUps,
   fetchTomorrowFollowUps,
+  createLead,
 } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import Loader from "../../../components/Loader";
@@ -179,7 +180,6 @@ export default function LeadsList() {
 
   usePageTitle("Lead List");
   const [me, setMe] = useState(null);
-  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // NEW: bind a visible date picker to the query (?date=YYYY-MM-DD)
@@ -318,6 +318,14 @@ export default function LeadsList() {
             </div>
 
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => navigate("/caller/leads/create")}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#3b0d66] text-white px-3.5 py-2.5 shadow hover:opacity-95 text-sm font-medium"
+              >
+                <FiPlus />
+                Create Lead
+              </button>
+
               {me?.role === "admin" && (
                 <button
                   className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#ff2e6e] to-[#ff5aa4] text-white px-3.5 py-2.5 shadow hover:opacity-95"
