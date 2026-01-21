@@ -20,16 +20,15 @@ export default function AdminLayout() {
           />
         )}
 
-        {/* Desktop sidebar (icon rail) */}
-        <div className="hidden lg:block sticky top-0 h-screen bg-white border-r border-gray-200 shadow-sm w-[72px]">
-          <Sidebar open onClose={() => {}} />
+        {/* Desktop sidebar */}
+        <div className="hidden lg:block sticky top-0 h-screen z-20">
+          <Sidebar open onClose={() => { }} />
         </div>
 
         {/* Mobile sidebar (off-canvas) */}
         <div
-          className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 shadow-sm lg:hidden transform transition-transform ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+          className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 shadow-sm lg:hidden transform transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+            }`}
         >
           <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         </div>

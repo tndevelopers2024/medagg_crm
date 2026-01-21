@@ -1,40 +1,47 @@
-import React, { useState, useEffect, useRef } from "react";
-import { FiChevronDown, FiSearch } from "react-icons/fi";
+import React, { Fragment } from "react";
+import { Menu, Transition } from "@headlessui/react";
+import { ChevronDownIcon, MagnifyingGlassIcon } from "@heroicons/react/20/solid";
 
-function Menu({ open, children }) {
-    if (!open) return null;
+function MenuFilter({ label, valueLabel, children }) {
     return (
-        <div className="absolute z-30 mt-2 w-64 rounded-xl border border-gray-200 bg-white shadow-lg">
-            <div className="py-1">{children}</div>
-        </div>
+        <Menu as="div" className="relative inline-block text-left">
+            <div>
+                <Menu.Button className="inline-flex w-full items-center justify-center gap-x-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50">
+                    {label && <span className="text-gray-500 font-normal">{label}</span>}
+                    <span className="font-medium text-gray-900">{valueLabel}</span>
+                    <ChevronDownIcon className="-mr-1 h-5 w-5 text-gray-400" aria-hidden="true" />
+                </Menu.Button>
+            </div>
+
+            <Transition
+                as={Fragment}
+                enter="transition ease-out duration-100"
+                enterFrom="transform opacity-0 scale-95"
+                enterTo="transform opacity-100 scale-100"
+                leave="transition ease-in duration-75"
+                leaveFrom="transform opacity-100 scale-100"
+                leaveTo="transform opacity-0 scale-95"
+            >
+                <Menu.Items className="absolute left-0 z-30 mt-2 w-56 origin-top-left rounded-xl bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                    <div className="py-1">
+                        {children}
+                    </div>
+                </Menu.Items>
+            </Transition>
+        </Menu>
     );
 }
 
-function FilterDropdown({ label, valueLabel, children }) {
-    const [open, setOpen] = useState(false);
-    const ref = useRef(null);
-    useEffect(() => {
-        const onClick = (e) => {
-            if (!ref.current) return;
-            if (!ref.current.contains(e.target)) setOpen(false);
-        };
-        document.addEventListener("mousedown", onClick);
-        return () => document.removeEventListener("mousedown", onClick);
-    }, []);
+// Wrapper for simple options to keep the main code clean
+function MenuItem({ active, onClick, children }) {
     return (
-        <div className="relative" ref={ref}>
-            <button
-                onClick={() => setOpen((s) => !s)}
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
-            >
-                {label && <span className="text-gray-500">{label}</span>}
-                <span className="font-medium">{valueLabel}</span>
-                <FiChevronDown className="opacity-60" />
-            </button>
-            <Menu open={open}>
-                {typeof children === "function" ? children(() => setOpen(false)) : children}
-            </Menu>
-        </div>
+        <button
+            onClick={onClick}
+            className={`${active ? 'bg-gray-50 text-emerald-600' : 'text-gray-900'
+                } group flex w-full items-center px-4 py-2 text-sm text-left`}
+        >
+            {children}
+        </button>
     );
 }
 
@@ -51,167 +58,146 @@ const LeadFilters = ({
     search, setSearch
 }) => {
     return (
-        <div className="flex items-center gap-3 overflow-x-auto pb-4 scrollbar-hide">
+        <div className="flex items-center gap-3 overflow-x-auto pb-4 scrollbar-hide z-10">
             {/* Date Filter */}
-            <FilterDropdown label="" valueLabel={dateMode === "7d" ? "Last 7 Days" : dateMode}>
-                {(close) => (
-                    <>
-                        {["Today", "Yesterday", "7d", "30d", "Custom"].map((m) => (
-                            <button
-                                key={m}
-                                onClick={() => {
-                                    setDateMode(m);
-                                    if (m !== "Custom") close();
-                                }}
-                                className={`block w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${dateMode === m ? "bg-gray-50 font-medium text-emerald-600" : ""
-                                    }`}
+            <MenuFilter label="" valueLabel={dateMode === "7d" ? "Last 7 Days" : dateMode}>
+                {["Today", "Yesterday", "7d", "30d", "Custom"].map((m) => (
+                    <Menu.Item key={m}>
+                        {({ active }) => (
+                            <MenuItem
+                                active={active || dateMode === m}
+                                onClick={() => setDateMode(m)}
                             >
                                 {m === "7d" ? "Last 7 Days" : m === "30d" ? "Last 30 Days" : m}
-                            </button>
-                        ))}
-                        {dateMode === "Custom" && (
-                            <div className="p-3 border-t">
-                                <input
-                                    type="date"
-                                    className="w-full text-xs border rounded mb-2"
-                                    value={customFrom}
-                                    onChange={(e) => setCustomFrom(e.target.value)}
-                                />
-                                <input
-                                    type="date"
-                                    className="w-full text-xs border rounded"
-                                    value={customTo}
-                                    onChange={(e) => setCustomTo(e.target.value)}
-                                />
-                            </div>
+                            </MenuItem>
                         )}
-                    </>
+                    </Menu.Item>
+                ))}
+                {dateMode === "Custom" && (
+                    <div className="p-3 border-t">
+                        <input
+                            type="date"
+                            className="w-full text-xs border rounded mb-2 px-2 py-1"
+                            value={customFrom}
+                            onChange={(e) => setCustomFrom(e.target.value)}
+                        />
+                        <input
+                            type="date"
+                            className="w-full text-xs border rounded px-2 py-1"
+                            value={customTo}
+                            onChange={(e) => setCustomTo(e.target.value)}
+                        />
+                    </div>
                 )}
-            </FilterDropdown>
+            </MenuFilter>
 
             {/* Source */}
-            <FilterDropdown label="" valueLabel={source}>
-                {(close) =>
-                    sourceOptions.map((s) => (
-                        <button
-                            key={s}
-                            onClick={() => {
-                                setSource(s);
-                                close();
-                            }}
-                            className={`block w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${source === s ? "bg-gray-50 font-medium text-emerald-600" : ""
-                                }`}
-                        >
-                            {s}
-                        </button>
-                    ))
-                }
-            </FilterDropdown>
+            <MenuFilter label="" valueLabel={source}>
+                {sourceOptions.map((s) => (
+                    <Menu.Item key={s}>
+                        {({ active }) => (
+                            <MenuItem
+                                active={active || source === s}
+                                onClick={() => setSource(s)}
+                            >
+                                {s}
+                            </MenuItem>
+                        )}
+                    </Menu.Item>
+                ))}
+            </MenuFilter>
 
-            {/* Callers */}
-            <FilterDropdown label="" valueLabel={caller.name || caller}>
-                {(close) =>
-                    callerOptions.map((c) => (
-                        <button
-                            key={c.id}
-                            onClick={() => {
-                                setCaller(c.id);
-                                close();
-                            }}
-                            className={`block w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${caller === c.id ? "bg-gray-50 font-medium text-emerald-600" : ""
-                                }`}
-                        >
-                            {c.name}
-                        </button>
-                    ))
-                }
-            </FilterDropdown>
+            {/* Callers - Only show if callerOptions provided */}
+            {callerOptions && callerOptions.length > 0 && (
+                <MenuFilter label="" valueLabel={caller.name || caller}>
+                    {callerOptions.map((c) => (
+                        <Menu.Item key={c.id}>
+                            {({ active }) => (
+                                <MenuItem
+                                    active={active || caller === c.id}
+                                    onClick={() => setCaller(c.id)}
+                                >
+                                    {c.name}
+                                </MenuItem>
+                            )}
+                        </Menu.Item>
+                    ))}
+                </MenuFilter>
+            )}
 
             {/* Statuses */}
-            <FilterDropdown label="" valueLabel={status}>
-                {(close) =>
-                    statusOptions.map((s) => (
-                        <button
-                            key={s}
-                            onClick={() => {
-                                setStatus(s);
-                                close();
-                            }}
-                            className={`block w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${status === s ? "bg-gray-50 font-medium text-emerald-600" : ""
-                                }`}
-                        >
-                            {s.replace(/_/g, ' ')}
-                        </button>
-                    ))
-                }
-            </FilterDropdown>
+            <MenuFilter label="" valueLabel={status}>
+                {statusOptions.map((s) => (
+                    <Menu.Item key={s}>
+                        {({ active }) => (
+                            <MenuItem
+                                active={active || status === s}
+                                onClick={() => setStatus(s)}
+                            >
+                                {s.replace(/_/g, ' ')}
+                            </MenuItem>
+                        )}
+                    </Menu.Item>
+                ))}
+            </MenuFilter>
 
             {/* OPD */}
-            <FilterDropdown label="" valueLabel={opd}>
-                {(close) =>
-                    opdOptions.map((s) => (
-                        <button
-                            key={s}
-                            onClick={() => {
-                                setOpd(s);
-                                close();
-                            }}
-                            className={`block w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${opd === s ? "bg-gray-50 font-medium text-emerald-600" : ""
-                                }`}
-                        >
-                            {s}
-                        </button>
-                    ))
-                }
-            </FilterDropdown>
+            <MenuFilter label="" valueLabel={opd}>
+                {opdOptions.map((s) => (
+                    <Menu.Item key={s}>
+                        {({ active }) => (
+                            <MenuItem
+                                active={active || opd === s}
+                                onClick={() => setOpd(s)}
+                            >
+                                {s}
+                            </MenuItem>
+                        )}
+                    </Menu.Item>
+                ))}
+            </MenuFilter>
 
             {/* IPD */}
-            <FilterDropdown label="" valueLabel={ipd}>
-                {(close) =>
-                    ipdOptions.map((s) => (
-                        <button
-                            key={s}
-                            onClick={() => {
-                                setIpd(s);
-                                close();
-                            }}
-                            className={`block w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${ipd === s ? "bg-gray-50 font-medium text-emerald-600" : ""
-                                }`}
-                        >
-                            {s}
-                        </button>
-                    ))
-                }
-            </FilterDropdown>
+            <MenuFilter label="" valueLabel={ipd}>
+                {ipdOptions.map((s) => (
+                    <Menu.Item key={s}>
+                        {({ active }) => (
+                            <MenuItem
+                                active={active || ipd === s}
+                                onClick={() => setIpd(s)}
+                            >
+                                {s}
+                            </MenuItem>
+                        )}
+                    </Menu.Item>
+                ))}
+            </MenuFilter>
 
             {/* Diagnostics */}
-            <FilterDropdown label="" valueLabel={diag}>
-                {(close) =>
-                    diagOptions.map((s) => (
-                        <button
-                            key={s}
-                            onClick={() => {
-                                setDiag(s);
-                                close();
-                            }}
-                            className={`block w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${diag === s ? "bg-gray-50 font-medium text-emerald-600" : ""
-                                }`}
-                        >
-                            {s}
-                        </button>
-                    ))
-                }
-            </FilterDropdown>
+            <MenuFilter label="" valueLabel={diag}>
+                {diagOptions.map((s) => (
+                    <Menu.Item key={s}>
+                        {({ active }) => (
+                            <MenuItem
+                                active={active || diag === s}
+                                onClick={() => setDiag(s)}
+                            >
+                                {s}
+                            </MenuItem>
+                        )}
+                    </Menu.Item>
+                ))}
+            </MenuFilter>
 
             <div className="flex-1"></div>
 
             {/* Search */}
             <div className="relative">
-                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" aria-hidden="true" />
                 <input
                     type="text"
                     placeholder="Search leads..."
-                    className="h-10 w-full rounded-xl border border-gray-200 bg-white pl-10 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    className="h-10 w-full rounded-xl border border-gray-200 bg-white pl-10 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-shadow"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                 />

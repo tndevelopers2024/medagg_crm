@@ -25,11 +25,9 @@ export default function Topbar() {
   const avatarSrc =
     user?.avatar ||
     user?.photo ||
-    (user?.email
-      ? `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-          user.email
-        )}`
-      : `https://i.pravatar.cc/32?u=${encodeURIComponent(name)}`);
+    `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+      user?.email || name
+    )}`;
 
   return (
     <header className="sticky top-0 z-20 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">

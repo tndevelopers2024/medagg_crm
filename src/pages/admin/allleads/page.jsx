@@ -8,7 +8,7 @@ import {
   FiPhoneCall,
   FiInfo,
 } from "react-icons/fi";
-import { fetchAllLeads, getAllUsers, assignLeadsToCaller, assignLeadsByLocation, bulkUpdateLeads, fetchLeadFields, fetchLeadStages } from "../../../utils/api";
+import { fetchAllLeads, fetchAssignedLeads, getAllUsers, assignLeadsToCaller, assignLeadsByLocation, bulkUpdateLeads, fetchLeadFields, fetchLeadStages } from "../../../utils/api";
 import BulkEditSidebar from "../../../components/admin/BulkEditSidebar";
 import LeadFilters from "../../../components/admin/leads/LeadFilters";
 import LeadActions from "../../../components/admin/leads/LeadActions";
@@ -17,6 +17,7 @@ import { AssignModal, SuccessDialog } from "../../../components/admin/leads/Lead
 import { parseLead, socketPayloadToLead, summarizeSocketLead, formatPhoneNumber } from "../../../utils/leadHelpers";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useSocket } from "../../../contexts/SocketProvider";
+import { useAuth } from "../../../contexts/AuthContext";
 import Loader from "../../../components/Loader";
 import { createPortal } from "react-dom";
 import { FiX, FiCheckCircle, FiUser, FiMessageSquare, FiCalendar } from "react-icons/fi";
@@ -181,26 +182,30 @@ const useEventDeduper = (windowMs = 8000) => {
   return seen;
 };
 
-const useSoftRefresh = (setter) => {
+const useSoftRefresh = (setter, fetchFn) => {
   const lastRef = useRef(0);
   const inflightRef = useRef(false);
+  // Default to fetchAllLeads if no fn provided, but we should always provide one now
+  const activeFetch = fetchFn || fetchAllLeads;
+
   return useCallback(async () => {
     const now = Date.now();
     if (inflightRef.current || now - lastRef.current < 1200) return;
     inflightRef.current = true;
     try {
-      const all = await fetchAllLeads();
+      const all = await activeFetch();
       setter(all.leads || []);
       lastRef.current = Date.now();
     } finally {
       inflightRef.current = false;
     }
-  }, [setter]);
+  }, [setter, activeFetch]);
 };
 
 /* ----------------------------- page ----------------------------- */
 export default function LeadsManagement() {
   const navigate = useNavigate();
+  const { user, isAdmin, isCaller, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [callers, setCallers] = useState([]);
@@ -246,28 +251,48 @@ export default function LeadsManagement() {
     }, 2500);
   }, []);
 
-  const softRefresh = useSoftRefresh(setRows);
+  // Determine effective role & fetch function
+  const effectiveIsCaller = isCaller || (user?.role || "").toLowerCase() === "caller";
+  const fetchFn = effectiveIsCaller ? fetchAssignedLeads : fetchAllLeads;
+
+  const softRefresh = useSoftRefresh(setRows, fetchFn);
   const dedupe = useEventDeduper(8000);
 
   // load data
   useEffect(() => {
     let mounted = true;
+    if (authLoading) return; // Wait for auth to settle
+
     (async () => {
       try {
         setLoading(true);
+
+        console.log('AllLeads - Loading data...');
+        console.log('AllLeads - isCaller:', isCaller);
+        console.log('AllLeads - effectiveIsCaller:', effectiveIsCaller);
+        console.log('AllLeads - user:', user);
+
+        // Fetch leads based on role
+        const leadsPromise = fetchFn();
+
         const [all, users, fieldsRes, stagesRes] = await Promise.all([
-          fetchAllLeads(),
-          getAllUsers({ role: "caller" }),
+          leadsPromise,
+          isAdmin ? getAllUsers({ role: "caller" }) : Promise.resolve([]),
           fetchLeadFields({ active: true }),
           fetchLeadStages({ active: true })
         ]);
         if (!mounted) return;
+
+        console.log('AllLeads - Fetched leads:', all);
+        console.log('AllLeads - Leads count:', all.leads?.length || 0);
+
         setRows(all.leads || []);
         setCallers(users.filter((u) => (u.role || "").toLowerCase() === "caller"));
         setFieldConfigs(fieldsRes.data || []);
         setLeadStages(stagesRes.data || []);
       } catch (e) {
-        console.error(e);
+        console.error('AllLeads - Error loading data:', e);
+        console.error('AllLeads - Error response:', e?.response?.data);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -275,7 +300,7 @@ export default function LeadsManagement() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [authLoading, isCaller, effectiveIsCaller, isAdmin, fetchFn]);
 
   // notify helper
   const notify = useCallback(
@@ -758,39 +783,43 @@ export default function LeadsManagement() {
     <div className="min-h-screen bg-gray-50/50 p-6 pb-20">
       <ToastStack toasts={toasts} remove={remove} />
 
-      {/* Sidebar & Modals */}
-      <BulkEditSidebar
-        open={showBulkEdit}
-        onClose={() => setShowBulkEdit(false)}
-        selectedCount={selected.size}
-        callers={callers}
-        onUpdate={handleBulkUpdate}
-        leadStages={leadStatusOptions.filter(s => s !== 'Lead Status')}
-        availableFields={availableFields}
-        fieldConfigs={fieldConfigs}
-        fieldNameMap={fieldNameMap}
-      />
+      {/* Sidebar & Modals - Admin only */}
+      {isAdmin && (
+        <>
+          <BulkEditSidebar
+            open={showBulkEdit}
+            onClose={() => setShowBulkEdit(false)}
+            selectedCount={selected.size}
+            callers={callers}
+            onUpdate={handleBulkUpdate}
+            leadStages={leadStatusOptions.filter(s => s !== 'Lead Status')}
+            availableFields={availableFields}
+            fieldConfigs={fieldConfigs}
+            fieldNameMap={fieldNameMap}
+          />
 
-      <AssignModal
-        open={showAssignModal}
-        callers={callers}
-        count={selected.size}
-        onClose={() => setShowAssignModal(false)}
-        onConfirm={handleBulkAssign}
-      />
-      <SuccessDialog
-        open={successOpen}
-        onClose={() => setSuccessOpen(false)}
-        text={successText}
-      />
+          <AssignModal
+            open={showAssignModal}
+            callers={callers}
+            count={selected.size}
+            onClose={() => setShowAssignModal(false)}
+            onConfirm={handleBulkAssign}
+          />
+          <SuccessDialog
+            open={successOpen}
+            onClose={() => setSuccessOpen(false)}
+            text={successText}
+          />
 
-      {/* Floating Actions */}
-      <LeadActions
-        selectedCount={selected.size}
-        onEdit={() => setShowBulkEdit(true)}
-        onAssign={() => setShowAssignModal(true)}
-        onClear={() => setSelected(new Set())}
-      />
+          {/* Floating Actions */}
+          <LeadActions
+            selectedCount={selected.size}
+            onEdit={() => setShowBulkEdit(true)}
+            onAssign={() => setShowAssignModal(true)}
+            onClear={() => setSelected(new Set())}
+          />
+        </>
+      )}
 
       {/* Header Info */}
       <div className="mb-6 flex items-center justify-between">
@@ -816,7 +845,7 @@ export default function LeadsManagement() {
           customFrom={customFrom} setCustomFrom={setCustomFrom}
           customTo={customTo} setCustomTo={setCustomTo}
           source={source} setSource={setSource} sourceOptions={sourceOptions}
-          caller={callerFilter} setCaller={setCallerFilter} callerOptions={callerOptions}
+          caller={callerFilter} setCaller={setCallerFilter} callerOptions={isAdmin ? callerOptions : []}
           status={leadStatus} setStatus={setLeadStatus} statusOptions={leadStatusOptions}
           opd={opdStatus} setOpd={setOpdStatus} opdOptions={opdOptions}
           ipd={ipdStatus} setIpd={setIpdStatus} ipdOptions={ipdOptions}
@@ -859,7 +888,9 @@ export default function LeadsManagement() {
                   <th className="px-4 py-3 font-medium">OPD Status</th>
                   <th className="px-4 py-3 font-medium">IPD Status</th>
                   <th className="px-4 py-3 font-medium">Diagnostic</th>
-                  <th className="px-4 py-3 font-medium">Assigned To</th>
+                  {user?.data?.role === 'admin' && (
+                    <th className="px-4 py-3 font-medium">Assigned To</th>
+                  )}
                   <th className="px-4 py-3 font-medium">Date</th>
                   <th className="px-4 py-3 font-medium"></th>
                 </tr>
@@ -890,18 +921,20 @@ export default function LeadsManagement() {
                       <td className="px-4 py-3"><Pill text={lead.opdStatus} /></td>
                       <td className="px-4 py-3"><Pill text={lead.ipdStatus} /></td>
                       <td className="px-4 py-3"><Pill text={lead.diagnostic} /></td>
-                      <td className="px-4 py-3">
-                        {lead.assignedTo ? (
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-600">
-                              {(callerMap.get(lead.assignedTo)?.name || "U")[0]}
+                      {user?.data?.role === 'admin' && (
+                        <td className="px-4 py-3">
+                          {lead.assignedTo ? (
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-600">
+                                {(callerMap.get(lead.assignedTo)?.name || "U")[0]}
+                              </div>
+                              <span className="truncate max-w-[100px]">{callerMap.get(lead.assignedTo)?.name || "Unknown"}</span>
                             </div>
-                            <span className="truncate max-w-[100px]">{callerMap.get(lead.assignedTo)?.name || "Unknown"}</span>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 italic">Unassigned</span>
-                        )}
-                      </td>
+                          ) : (
+                            <span className="text-gray-400 italic">Unassigned</span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-xs text-gray-400">
                         {lead.createdTime?.toLocaleDateString()}
                       </td>

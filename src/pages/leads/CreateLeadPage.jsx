@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { FiSave, FiArrowLeft } from "react-icons/fi";
 import { createLead, getAllUsers, fetchCampaigns, fetchLeadFields, fetchBookingFields, fetchLeadStages } from "../../utils/api";
 import { usePageTitle } from "../../contexts/TopbarTitleContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { DynamicField, objectToFieldData } from "../../components/DynamicField";
 import toast from "react-hot-toast";
 
 export default function CreateLeadPage() {
     const navigate = useNavigate();
+    const { isAdmin } = useAuth();
     usePageTitle("Create New Lead");
 
     const [users, setUsers] = useState([]);
@@ -35,21 +37,36 @@ export default function CreateLeadPage() {
         const loadConfigs = async () => {
             setFieldsLoading(true);
             try {
-                const [leadRes, opRes, ipRes, usersRes, campaignsRes, stagesRes] = await Promise.all([
+                // Base promises that all users can access
+                const basePromises = [
                     fetchLeadFields({ active: "true" }),
                     fetchBookingFields({ type: "OP", active: "true" }),
                     fetchBookingFields({ type: "IP", active: "true" }),
+                    fetchLeadStages({ active: "true" }),
+                ];
+
+                // Admin-only promises
+                const adminPromises = isAdmin ? [
                     getAllUsers({ role: "caller" }),
                     fetchCampaigns(),
-                    fetchLeadStages({ active: "true" }),
+                ] : [
+                    Promise.resolve([]), // Empty users for callers
+                    Promise.resolve({ success: true, data: [] }), // Empty campaigns for callers
+                ];
+
+                const [leadRes, opRes, ipRes, stagesRes, usersRes, campaignsRes] = await Promise.all([
+                    ...basePromises,
+                    ...adminPromises,
                 ]);
 
                 if (leadRes.success) setLeadFields(leadRes.data);
                 if (opRes.success) setOpFields(opRes.data);
                 if (ipRes.success) setIpFields(ipRes.data);
-                setUsers(usersRes);
-                if (campaignsRes.success) setCampaigns(campaignsRes.data);
                 if (stagesRes.success) setLeadStages(stagesRes.data);
+                if (isAdmin) {
+                    setUsers(usersRes);
+                    if (campaignsRes.success) setCampaigns(campaignsRes.data);
+                }
             } catch (err) {
                 console.error("Error loading configs:", err);
                 toast.error("Failed to load field configurations");
@@ -59,7 +76,7 @@ export default function CreateLeadPage() {
         };
 
         loadConfigs();
-    }, []);
+    }, [isAdmin]);
 
     const handleLeadFieldChange = (fieldName, value) => {
         setLeadData((prev) => ({ ...prev, [fieldName]: value }));
@@ -190,62 +207,64 @@ export default function CreateLeadPage() {
                         </div>
                     )}
 
-                    {/* Assignment & Campaign */}
-                    <div>
-                        <h3 className="mb-4 text-lg font-semibold text-gray-900 border-b border-gray-100 pb-2">
-                            Assignment & Campaign
-                        </h3>
-                        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                            <div className="space-y-1">
-                                <label className="text-sm font-medium text-gray-700">Assign To Caller</label>
-                                <select
-                                    value={assignedTo}
-                                    onChange={(e) => setAssignedTo(e.target.value)}
-                                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-100"
-                                >
-                                    <option value="">Unassigned</option>
-                                    {users.map((u) => (
-                                        <option key={u.id} value={u.id}>
-                                            {u.name || u.email}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="space-y-1">
-                                <label className="text-sm font-medium text-gray-700">Campaign</label>
-                                <select
-                                    value={campaignId}
-                                    onChange={(e) => setCampaignId(e.target.value)}
-                                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-100"
-                                >
-                                    <option value="">Select Campaign...</option>
-                                    {campaigns.map((c) => (
-                                        <option key={c._id} value={c._id}>
-                                            {c.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="space-y-1">
-                                <label className="text-sm font-medium text-gray-700">Lead Status</label>
-                                <select
-                                    value={status}
-                                    onChange={(e) => setStatus(e.target.value)}
-                                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-100"
-                                >
-                                    {leadStages
-                                        .filter((s) => s.stageCategory === "initial" || s.stageCategory === "active")
-                                        .map((stage) => (
-                                            <option key={stage.stageName} value={stage.stageName}>
-                                                {stage.displayLabel}
+                    {/* Assignment & Campaign - Admin Only */}
+                    {isAdmin && (
+                        <div>
+                            <h3 className="mb-4 text-lg font-semibold text-gray-900 border-b border-gray-100 pb-2">
+                                Assignment & Campaign
+                            </h3>
+                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                                <div className="space-y-1">
+                                    <label className="text-sm font-medium text-gray-700">Assign To Caller</label>
+                                    <select
+                                        value={assignedTo}
+                                        onChange={(e) => setAssignedTo(e.target.value)}
+                                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-100"
+                                    >
+                                        <option value="">Unassigned</option>
+                                        {users.map((u) => (
+                                            <option key={u.id} value={u.id}>
+                                                {u.name || u.email}
                                             </option>
                                         ))}
-                                </select>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-sm font-medium text-gray-700">Campaign</label>
+                                    <select
+                                        value={campaignId}
+                                        onChange={(e) => setCampaignId(e.target.value)}
+                                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-100"
+                                    >
+                                        <option value="">Select Campaign...</option>
+                                        {campaigns.map((c) => (
+                                            <option key={c._id} value={c._id}>
+                                                {c.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-sm font-medium text-gray-700">Lead Status</label>
+                                    <select
+                                        value={status}
+                                        onChange={(e) => setStatus(e.target.value)}
+                                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-100"
+                                    >
+                                        {leadStages
+                                            .filter((s) => s.stageCategory === "initial" || s.stageCategory === "active")
+                                            .map((stage) => (
+                                                <option key={stage.stageName} value={stage.stageName}>
+                                                    {stage.displayLabel}
+                                                </option>
+                                            ))}
+                                    </select>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* OP Booking */}
                     <div>

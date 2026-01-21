@@ -7,7 +7,8 @@ import {
 } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
-import { fetchAllLeads, fetchLeadStages, updateLeadStatus } from "../../../utils/api";
+import { useAuth } from "../../../contexts/AuthContext";
+import { fetchAllLeads, fetchAssignedLeads, fetchLeadStages, updateLeadStatus } from "../../../utils/api";
 import { toast } from "react-hot-toast";
 
 // --- Helpers ---
@@ -96,6 +97,7 @@ const ActionButton = ({ icon: Icon, label, onClick }) => (
 
 export default function SearchLeadsPage() {
     usePageTitle("Search Leads");
+    const { isCaller } = useAuth();
 
     const [query, setQuery] = useState("");
     const [leads, setLeads] = useState([]);
@@ -123,12 +125,13 @@ export default function SearchLeadsPage() {
             fetchLeads(query);
         }, 500);
         return () => clearTimeout(timer);
-    }, [query]);
+    }, [query, isCaller]);
 
     const fetchLeads = async (q) => {
         setLoading(true);
         try {
-            const res = await fetchAllLeads();
+            // Fetch based on role
+            const res = isCaller ? await fetchAssignedLeads() : await fetchAllLeads();
             let all = res.leads || [];
 
             if (q) {
@@ -244,8 +247,8 @@ export default function SearchLeadsPage() {
                                 </div>
                             </div>
                             <div className="flex gap-2">
-                                <button className="rounded-full p-2 text-green-600 hover:bg-green-50"><FaWhatsapp size={20} /></button>
-                                <button className="rounded-full p-2 text-gray-400 hover:bg-gray-100"><FiMessageSquare size={20} /></button>
+                                {/* <button className="rounded-full p-2 text-green-600 hover:bg-green-50"><FaWhatsapp size={20} /></button>
+                                <button className="rounded-full p-2 text-gray-400 hover:bg-gray-100"><FiMessageSquare size={20} /></button> */}
                                 <button className="rounded-full p-2 text-gray-400 hover:bg-gray-100"><FiCopy size={20} /></button>
                             </div>
                         </div>

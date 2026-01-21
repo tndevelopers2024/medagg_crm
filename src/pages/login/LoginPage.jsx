@@ -44,10 +44,20 @@ export default function MedCRMLogin({
     try {
       const data = await login(email, password);
 
+      // Extract user data - handle nested structure
+      const userData = data?.data || data?.user || data;
+      const token = data?.token;
+
       // Persist token/user if "Remember me" is checked
-      if (data?.token && remember) {
-        localStorage.setItem("token", data.token);
-        if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
+      if (token && remember) {
+        localStorage.setItem("token", token);
+        if (userData) {
+          localStorage.setItem("user", JSON.stringify(userData));
+          // Store role separately for easy access
+          if (userData.role) {
+            localStorage.setItem("role", userData.role);
+          }
+        }
       }
 
       toast.success("Login successful!");
@@ -55,7 +65,7 @@ export default function MedCRMLogin({
       if (typeof onSuccess === "function") onSuccess(data);
 
       // ---- Role-based redirect ----
-      const role = String(data?.role || "").toLowerCase();
+      const role = String(userData?.role || data?.role || "").toLowerCase();
       const roleDestinations = {
         admin: "/admin/dashboard",
         caller: "/caller/dashboard",

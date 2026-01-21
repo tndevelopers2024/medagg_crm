@@ -18,6 +18,8 @@ import {
   FiList,
   FiActivity,
   FiUser,
+  FiMic,
+  FiStar,
 } from "react-icons/fi";
 import {
   // removed: getMe, fetchAssignedLeads, fetchAllLeads
@@ -37,7 +39,74 @@ import {
   fetchLeadFields,
   fetchBookingFields,
   fetchLeadStages,
+  BASE_URL,
 } from "../../../utils/api";
+
+// ... existing helpers ...
+
+// Action → icon/tone mapping (for activity timeline)
+const actionMeta = (action = "") => {
+  const base = {
+    Icon: FiActivity,
+    tone: "bg-gray-50 text-gray-700 border-gray-200",
+    label: action.replace(/_/g, " "),
+  };
+  const map = {
+    call_logged: {
+      Icon: FiPhoneCall,
+      tone: "bg-sky-50 text-sky-700 border-sky-200",
+    },
+    recording_uploaded: {
+      Icon: FiMic,
+      tone: "bg-rose-50 text-rose-700 border-rose-200",
+    },
+    lead_update: {
+      Icon: FiEdit3,
+      tone: "bg-gray-50 text-gray-700 border-gray-200",
+    },
+
+    fielddata_replace: {
+      Icon: FiList,
+      tone: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    },
+    fielddata_merge: {
+      Icon: FiList,
+      tone: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    },
+
+    op_booking_add: {
+      Icon: FiPlusCircle,
+      tone: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    },
+    op_booking_update: {
+      Icon: FiEdit3,
+      tone: "bg-amber-50 text-amber-700 border-amber-200",
+    },
+    op_booking_remove: {
+      Icon: FiTrash2,
+      tone: "bg-rose-50 text-rose-700 border-rose-200",
+    },
+
+    ip_booking_add: {
+      Icon: FiPlusCircle,
+      tone: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    },
+    ip_booking_update: {
+      Icon: FiEdit3,
+      tone: "bg-amber-50 text-amber-700 border-amber-200",
+    },
+    ip_booking_remove: {
+      Icon: FiTrash2,
+      tone: "bg-rose-50 text-rose-700 border-rose-200",
+    },
+  };
+  return { ...base, ...(map[action] || {}) };
+};
+
+// ... inside component ...
+
+
+
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import Loader from "../../../components/Loader";
 import { DynamicField, fieldDataToObject, objectToFieldData } from "../../../components/DynamicField";
@@ -70,6 +139,74 @@ const timeToHHMM = (dateLike) => {
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   return `${hh}:${mm}`;
+};
+
+// Helper to format concise activity messages
+const formatActivity = (a) => {
+  const actor = a.actor ? (a.actor.name || a.actor.email || "User") : "System";
+
+  if (a.action === 'lead_update') {
+    if (a.diff?.after?.status && a.diff?.before?.status) {
+      return `${actor} changed status from ${a.diff.before.status} to ${a.diff.after.status}`;
+    }
+    if (a.diff?.after?.status) {
+      return `${actor} set status to ${a.diff.after.status}`;
+    }
+    if (a.diff?.after?.notes) {
+      return `${actor} added a note`;
+    }
+    return `${actor} updated lead details`;
+  }
+
+  if (a.action === 'fielddata_merge' || a.action === 'fielddata_replace') {
+    const changes = [];
+    if (a.diff?.after) {
+      // It seems diff.after contains the key-value pairs that changed
+      Object.keys(a.diff.after).forEach(key => {
+        if (key === '_id' || key === 'updatedAt') return;
+
+        const oldVal = a.diff.before?.[key];
+        const newVal = a.diff.after[key];
+
+        // Simple equality check
+        if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+          // Format key name: "phone_number" -> "Phone Number"
+          const readableKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+          changes.push(readableKey);
+        }
+      });
+    }
+
+    if (changes.length === 1) {
+      return `${actor} updated ${changes[0]}`;
+    } else if (changes.length > 1) {
+      // "User updated Phone, Email and City"
+      const last = changes.pop();
+      return `${actor} updated ${changes.join(", ")} and ${last}`;
+    }
+    return `${actor} updated lead information`;
+  }
+
+  if (a.action === 'call_logged') {
+    return `${actor} logged a call`;
+  }
+
+  if (a.action === 'recording_uploaded') {
+    return `${actor} uploaded a recording`;
+  }
+
+  if (a.action?.startsWith('op_booking_')) {
+    const type = a.action.includes('add') ? 'added' : a.action.includes('update') ? 'updated' : 'removed';
+    return `${actor} ${type} an OP booking`;
+  }
+
+  if (a.action?.startsWith('ip_booking_')) {
+    const type = a.action.includes('add') ? 'added' : a.action.includes('update') ? 'updated' : 'removed';
+    return `${actor} ${type} an IP booking`;
+  }
+
+  // Fallback
+  return `${actor} performed ${a.action.replace(/_/g, ' ')}`;
 };
 
 const readField = (fieldData = [], keys = []) => {
@@ -135,61 +272,6 @@ const Textarea = ({ label, ...p }) => (
     />
   </div>
 );
-
-// Action → icon/tone mapping (for activity timeline)
-const actionMeta = (action = "") => {
-  const base = {
-    Icon: FiActivity,
-    tone: "bg-gray-50 text-gray-700 border-gray-200",
-    label: action.replace(/_/g, " "),
-  };
-  const map = {
-    call_logged: {
-      Icon: FiPhoneCall,
-      tone: "bg-sky-50 text-sky-700 border-sky-200",
-    },
-    lead_update: {
-      Icon: FiEdit3,
-      tone: "bg-gray-50 text-gray-700 border-gray-200",
-    },
-
-    fielddata_replace: {
-      Icon: FiList,
-      tone: "bg-indigo-50 text-indigo-700 border-indigo-200",
-    },
-    fielddata_merge: {
-      Icon: FiList,
-      tone: "bg-indigo-50 text-indigo-700 border-indigo-200",
-    },
-
-    op_booking_add: {
-      Icon: FiPlusCircle,
-      tone: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    },
-    op_booking_update: {
-      Icon: FiEdit3,
-      tone: "bg-amber-50 text-amber-700 border-amber-200",
-    },
-    op_booking_remove: {
-      Icon: FiTrash2,
-      tone: "bg-rose-50 text-rose-700 border-rose-200",
-    },
-
-    ip_booking_add: {
-      Icon: FiPlusCircle,
-      tone: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    },
-    ip_booking_update: {
-      Icon: FiEdit3,
-      tone: "bg-amber-50 text-amber-700 border-amber-200",
-    },
-    ip_booking_remove: {
-      Icon: FiTrash2,
-      tone: "bg-rose-50 text-rose-700 border-rose-200",
-    },
-  };
-  return { ...base, ...(map[action] || {}) };
-};
 
 // ---------- page ----------
 export default function LeadManagement() {
@@ -837,6 +919,40 @@ export default function LeadManagement() {
                 </select>
               </div>
 
+              {/* Rating Input */}
+              <div className="space-y-1">
+                <label className="text-xs text-gray-600">Rating</label>
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const currentRating = parseInt(leadData.rating || 0);
+                    const isActive = currentRating >= star;
+                    return (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => handleLeadFieldChange("rating", String(star))}
+                        className={`p-1 transition-transform hover:scale-110 focus:outline-none ${isActive ? "text-amber-400" : "text-gray-300"
+                          }`}
+                      >
+                        <FiStar
+                          className="h-6 w-6"
+                          fill={isActive ? "currentColor" : "none"}
+                        />
+                      </button>
+                    );
+                  })}
+                  {(leadData.rating && leadData.rating !== "0") && (
+                    <button
+                      type="button"
+                      onClick={() => handleLeadFieldChange("rating", "0")}
+                      className="ml-2 text-xs text-gray-400 hover:text-gray-600 underline"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <Textarea
                 label="Call Notes"
                 placeholder="Type here..."
@@ -1168,7 +1284,7 @@ export default function LeadManagement() {
         <section className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-base font-semibold text-gray-900">
-              Activity (server logs)
+              Activity Timeline
             </h3>
             <button
               onClick={loadActivities}
@@ -1207,62 +1323,92 @@ export default function LeadManagement() {
                       <meta.Icon />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm text-gray-900">
-                          {a.description || meta.label}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full border text-[11px] text-gray-700 bg-gray-50 border-gray-200">
-                          {a.action}
-                        </span>
-                        <Actor />
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5">{when}</p>
 
-                      {(a.diff && (a.diff.before || a.diff.after)) ||
-                        (a.meta && Object.keys(a.meta).length) ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900">
+                          {formatActivity(a)}
+                        </span>
+                        <span className="text-xs text-gray-500">{when}</span>
+                      </div>
+                      {/* Removed raw badges and actor below as they are integrated into the message now */}
+
+                      {a.action === 'recording_uploaded' && a.meta?.recordingFilename && (
                         <div className="mt-2">
+                          <audio
+                            controls
+                            src={`${BASE_URL.replace('/api/v1', '')}/uploads/recordings/${a.meta.recordingFilename}`}
+                            className="w-full max-w-md h-8"
+                          />
+                        </div>
+                      )}
+
+                      {((a.diff && (a.diff.before || a.diff.after)) || (a.meta && Object.keys(a.meta).length > 0)) && (
+                        <div className="mt-2 text-xs">
                           <button
                             onClick={() => toggleExpand(aid)}
-                            className="text-xs text-violet-700 hover:text-violet-800"
+                            className="text-violet-700 hover:text-violet-800 font-medium mb-2"
                           >
-                            {expanded[aid] ? "Hide changes" : "View changes"}
+                            {expanded[aid] ? "Hide details" : "View details"}
                           </button>
+
                           {expanded[aid] && (
-                            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {a.diff?.before !== undefined && (
-                                <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-                                  <div className="text-[11px] font-medium text-gray-600 mb-1">
-                                    Before
-                                  </div>
-                                  <pre className="text-[11px] overflow-auto">
-                                    {JSON.stringify(a.diff.before, null, 2)}
-                                  </pre>
+                            <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-2">
+                              {/* Readable Diff */}
+                              {(a.diff?.before || a.diff?.after) && (
+                                <div className="space-y-1">
+                                  {Object.keys({ ...a.diff?.before, ...a.diff?.after }).map((key) => {
+                                    // Skip internal keys or if values are identical
+                                    if (key === '_id' || key === 'updatedAt') return null;
+
+                                    const oldVal = a.diff?.before?.[key];
+                                    const newVal = a.diff?.after?.[key];
+
+                                    // If both undefined/null, skip
+                                    if (!oldVal && !newVal) return null;
+                                    // If deeply equal (simple check), skip
+                                    if (JSON.stringify(oldVal) === JSON.stringify(newVal)) return null;
+
+                                    const formatValue = (v) => {
+                                      if (v === null || v === undefined || v === "") return <span className="text-gray-400 italic">Empty</span>;
+                                      if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+                                      if (typeof v === 'object') return JSON.stringify(v); // Fallback for objects
+                                      return String(v);
+                                    };
+
+                                    return (
+                                      <div key={key} className="flex flex-wrap items-baseline gap-2">
+                                        <span className="font-medium text-gray-700 capitalize">
+                                          {key.replace(/([A-Z])/g, ' $1').trim().replace(/_/g, ' ')}:
+                                        </span>
+                                        <div className="flex items-center gap-2 text-gray-600">
+                                          <span className="line-through opacity-75">{formatValue(oldVal)}</span>
+                                          <span>→</span>
+                                          <span className="font-semibold text-gray-900">{formatValue(newVal)}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
-                              {a.diff?.after !== undefined && (
-                                <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-                                  <div className="text-[11px] font-medium text-gray-600 mb-1">
-                                    After
-                                  </div>
-                                  <pre className="text-[11px] overflow-auto">
-                                    {JSON.stringify(a.diff.after, null, 2)}
-                                  </pre>
-                                </div>
-                              )}
+
+                              {/* Readable Meta (if any extra info exists) */}
                               {a.meta && Object.keys(a.meta).length > 0 && (
-                                <div className="md:col-span-2 rounded-lg border border-gray-200 bg-gray-50 p-2">
-                                  <div className="text-[11px] font-medium text-gray-600 mb-1">
-                                    Meta
-                                  </div>
-                                  <pre className="text-[11px] overflow-auto">
-                                    {JSON.stringify(a.meta, null, 2)}
-                                  </pre>
+                                <div className="mt-2 pt-2 border-t border-gray-200">
+                                  {Object.entries(a.meta).map(([mKey, mVal]) => {
+                                    if (mKey === 'recordingFilename') return null; // Handled separately
+                                    return (
+                                      <div key={mKey} className="flex gap-2 text-gray-500">
+                                        <span className="capitalize">{mKey}:</span>
+                                        <span>{String(mVal)}</span>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
                           )}
                         </div>
-                      ) : null}
+                      )}
                     </div>
                   </li>
                 );
@@ -1274,60 +1420,62 @@ export default function LeadManagement() {
             </div>
           )}
         </section>
-      </div>
+      </div >
 
       {/* ---- Call you later modal ---- */}
-      {showLaterModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={closeCallYouLater} />
-          <div className="relative z-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-xl">
-            <h4 className="text-base font-semibold text-gray-900 mb-1">Schedule follow-up</h4>
-            <p className="text-sm text-gray-600 mb-4">
-              Pick a <span className="font-medium">date</span> and <span className="font-medium">time</span>.
-            </p>
+      {
+        showLaterModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/30" onClick={closeCallYouLater} />
+            <div className="relative z-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-xl">
+              <h4 className="text-base font-semibold text-gray-900 mb-1">Schedule follow-up</h4>
+              <p className="text-sm text-gray-600 mb-4">
+                Pick a <span className="font-medium">date</span> and <span className="font-medium">time</span>.
+              </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">Date (YYYY-MM-DD)</label>
-                <input
-                  type="date"
-                  value={laterDate}
-                  onChange={(e) => setLaterDate(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-100"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">Date (YYYY-MM-DD)</label>
+                  <input
+                    type="date"
+                    value={laterDate}
+                    onChange={(e) => setLaterDate(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-100"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">Time (HH:mm)</label>
+                  <input
+                    type="time"
+                    value={laterTime}
+                    onChange={(e) => setLaterTime(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-100"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">Time (HH:mm)</label>
-                <input
-                  type="time"
-                  value={laterTime}
-                  onChange={(e) => setLaterTime(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-100"
-                />
-              </div>
-            </div>
 
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                onClick={closeCallYouLater}
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveCallYouLater}
-                disabled={deferring}
-                className={cls(
-                  "inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#ff2e6e] to-[#ff5aa4] text-white px-3 py-2 text-sm shadow",
-                  deferring ? "opacity-60 cursor-not-allowed" : "hover:opacity-95"
-                )}
-              >
-                {deferring ? "Saving..." : "Save"}
-              </button>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  onClick={closeCallYouLater}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveCallYouLater}
+                  disabled={deferring}
+                  className={cls(
+                    "inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#ff2e6e] to-[#ff5aa4] text-white px-3 py-2 text-sm shadow",
+                    deferring ? "opacity-60 cursor-not-allowed" : "hover:opacity-95"
+                  )}
+                >
+                  {deferring ? "Saving..." : "Save"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </main>
+        )
+      }
+    </main >
   );
 }
