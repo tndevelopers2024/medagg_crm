@@ -31,7 +31,8 @@ const ImportLeadsPage = () => {
     // Data State
     const [file, setFile] = useState(null);
     const [csvHeaders, setCsvHeaders] = useState([]);
-    const [parsedRows, setParsedRows] = useState([]); // Raw JSON from CSV
+    const [parsedRows, setParsedRows] = useState([]); // Current working set
+    const [originalRows, setOriginalRows] = useState([]); // Backup for Undo
 
     const [systemFields, setSystemFields] = useState([]); // From API
     const [columnMapping, setColumnMapping] = useState({}); // { "csv_header": "system_field_name" }
@@ -107,6 +108,7 @@ const ImportLeadsPage = () => {
                 const headers = Object.keys(data[0]);
                 setCsvHeaders(headers);
                 setParsedRows(data);
+                setOriginalRows(data); // Backup
 
                 // Auto-map columns
                 const initialMapping = {};
@@ -159,11 +161,27 @@ const ImportLeadsPage = () => {
             const res = await checkDuplicates(mappedForCheck);
             if (res.success) {
                 setDuplicates(res.duplicates || []); // Array of { type: 'phone', value: '...' }
-                const uniqueDupes = new Set(res.duplicates.map(d => d.value));
+
+                const duplicateValues = new Set(res.duplicates.map(d => d.value));
+
+                // Count actual ROWS that are duplicates
+                let duplicateRowCount = 0;
+                parsedRows.forEach(row => {
+                    const phoneHeader = Object.keys(columnMapping).find(key => columnMapping[key] === "phone_number");
+                    const emailHeader = Object.keys(columnMapping).find(key => columnMapping[key] === "email");
+
+                    const phone = phoneHeader ? String(row[phoneHeader]).replace(/\D/g, "") : null;
+                    const email = emailHeader ? row[emailHeader] : null;
+
+                    if ((phone && duplicateValues.has(phone)) || (email && duplicateValues.has(email))) {
+                        duplicateRowCount++;
+                    }
+                });
+
                 setDuplicateStats({
                     totalRows: parsedRows.length,
-                    duplicatesFound: uniqueDupes.size,
-                    uniqueLeads: parsedRows.length - uniqueDupes.size
+                    duplicatesFound: duplicateRowCount,
+                    uniqueLeads: parsedRows.length - duplicateRowCount
                 });
                 setActiveStep(3);
             }
@@ -192,13 +210,26 @@ const ImportLeadsPage = () => {
             return true;
         });
 
+        if (cleanRows.length === 0) {
+            toast.success("Removed all duplicates. 0 unique leads remain.");
+        } else {
+            toast.success(`Removed duplicates. ${cleanRows.length} unique leads remaining.`);
+        }
+
         setParsedRows(cleanRows);
         setDuplicateStats({
             totalRows: cleanRows.length,
             duplicatesFound: 0,
             uniqueLeads: cleanRows.length
         });
-        toast.success("Duplicates removed from list");
+    };
+
+    const restoreOriginal = () => {
+        if (originalRows.length > 0) {
+            setParsedRows(originalRows);
+            setDuplicateStats(null); // Reset stats to force re-check if needed, or clear UI
+            toast.success("Restored original list");
+        }
     };
 
     const downloadDuplicates = () => {
@@ -455,7 +486,7 @@ const ImportLeadsPage = () => {
 
                                 <div className="bg-gray-50 p-6 rounded-lg text-left space-y-3 mb-8">
                                     <div className="flex justify-between">
-                                        <span>Total Rows in File:</span>
+                                        <span>Leads in List:</span>
                                         <span className="font-bold">{duplicateStats.totalRows}</span>
                                     </div>
                                     <div className="flex justify-between text-red-600">
@@ -492,8 +523,18 @@ const ImportLeadsPage = () => {
                                         </button>
                                     </div>
                                 ) : (
-                                    <div className="text-green-600 font-medium  mb-4">
-                                        <FiCheck className="inline mr-2" /> No duplicates found! You are good to go.
+                                    <div className="flex flex-col items-center gap-4">
+                                        <div className="text-green-600 font-medium">
+                                            <FiCheck className="inline mr-2" /> No duplicates found! You are good to go.
+                                        </div>
+                                        {parsedRows.length < originalRows.length && (
+                                            <button
+                                                onClick={restoreOriginal}
+                                                className="text-sm text-indigo-600 hover:text-indigo-800 underline"
+                                            >
+                                                Restore Original Data
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>

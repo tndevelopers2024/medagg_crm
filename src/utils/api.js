@@ -15,7 +15,7 @@ export {
 export const BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
   (window.location.hostname === "localhost"
-    ? "http://localhost:5013/api/v1"
+    ? "http://medagg.online/api/v1"
     : "https://medagg.online/api/v1");
 
 const api = axios.create({
@@ -466,8 +466,20 @@ export const fetchMyStats = async () => {
     interested: Number(data?.interested ?? 0),
     converted: Number(data?.converted ?? 0),
     notInterested: Number(data?.notInterested ?? 0),
+    todayNewLeads: Number(data?.todayNewLeads ?? 0),
+    opdBookedToday: Number(data?.opdBookedToday ?? 0),
+    opdDoneToday: Number(data?.opdDoneToday ?? 0),
+    ipdDoneToday: Number(data?.ipdDoneToday ?? 0),
     inProgress: Number(data?.inProgress ?? 0),
   };
+};
+
+/**
+ * GET /caller/stats/dashboard
+ */
+export const fetchDashboardStats = async () => {
+  const { data } = await api.get("/caller/stats/dashboard");
+  return data;
 };
 
 /* -------------------------------------------

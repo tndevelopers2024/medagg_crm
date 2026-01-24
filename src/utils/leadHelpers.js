@@ -66,6 +66,7 @@ export const parseLead = (lead) => {
         opdStatus,
         ipdStatus,
         diagnostic,
+        followUpAt: lead.followUpAt || null,
         raw: lead,
     };
 };

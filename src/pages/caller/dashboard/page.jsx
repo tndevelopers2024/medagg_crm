@@ -20,9 +20,9 @@ import {
 
 import {
     getMe,
-    fetchAssignedLeads,
     fetchTodayFollowUps,
     fetchTomorrowFollowUps,
+    fetchDashboardStats,
 } from "../../../utils/api";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useNavigate } from "react-router-dom";
@@ -55,6 +55,14 @@ const isTomorrow = (d) => {
     const t = new Date();
     t.setDate(t.getDate() + 1);
     return d && d >= startOfDay(t) && d <= endOfDay(t);
+};
+const formatDurationAgo = (mins) => {
+    if (!mins && mins !== 0) return "—";
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    if (h < 24) return `${h}h`;
+    const d = Math.floor(h / 24);
+    return `${d}d`;
 };
 const withinNextMinutes = (d, mins = 60) => {
     if (!d) return false;
@@ -271,29 +279,14 @@ const useEventDeduper = (windowMs = 8000) => {
     }, []);
 };
 
-const useSoftAssignedRefresh = (setter) => {
-    const lastRef = useRef(0);
-    const inflightRef = useRef(false);
-    return useCallback(async () => {
-        const now = Date.now();
-        if (inflightRef.current || now - lastRef.current < 1200) return;
-        inflightRef.current = true;
-        try {
-            const res = await fetchAssignedLeads();
-            setter(res.leads || []);
-            lastRef.current = Date.now();
-        } finally {
-            inflightRef.current = false;
-        }
-    }, [setter]);
-};
+
 
 /* -------------------- page -------------------- */
 export default function CallersDashboard() {
     const [me, setMe] = useState(null);
-    const [leads, setLeads] = useState([]);
     const [todayTasks, setTodayTasks] = useState([]);
     const [tomorrowTasks, setTomorrowTasks] = useState([]);
+    const [stats, setStats] = useState({});
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState("");
     usePageTitle("Caller Dashboard", "Welcome back");
@@ -302,7 +295,6 @@ export default function CallersDashboard() {
     // socket + toasts
     const { socket, isConnected } = useSocket();
     const dedupe = useEventDeduper(8000);
-    const softRefreshAssigned = useSoftAssignedRefresh(setLeads);
 
     // Refresh tasks helper
     const refreshTasks = useCallback(async () => {
@@ -315,23 +307,32 @@ export default function CallersDashboard() {
         }
     }, []);
 
+    const refreshStats = useCallback(async () => {
+        try {
+            const s = await fetchDashboardStats();
+            setStats(s);
+        } catch (e) {
+            console.warn("Failed to refresh stats", e);
+        }
+    }, []);
+
     // initial load
     useEffect(() => {
         let mounted = true;
         (async () => {
             try {
                 setLoading(true);
-                const [user, assigned, t1, t2] = await Promise.all([
+                const [user, t1, t2, st] = await Promise.all([
                     getMe(),
-                    fetchAssignedLeads(),
                     fetchTodayFollowUps(),
                     fetchTomorrowFollowUps(),
+                    fetchDashboardStats(),
                 ]);
                 if (!mounted) return;
                 setMe(user);
-                setLeads(assigned.leads || []);
                 setTodayTasks(t1.leads || []);
                 setTomorrowTasks(t2.leads || []);
+                setStats(st || {});
             } catch (e) {
                 setErr(e?.response?.data?.message || e?.message || "Failed to load dashboard data");
             } finally {
@@ -378,8 +379,8 @@ export default function CallersDashboard() {
                 tone: "success",
                 leadName: s.name,
             });
-            softRefreshAssigned();
             refreshTasks();
+            refreshStats();
         };
 
         const onLeadCreated = (p = {}) => {
@@ -388,8 +389,8 @@ export default function CallersDashboard() {
             notify("New lead created", "A new lead has been added.", {
                 leadName: s.name,
             });
-            softRefreshAssigned();
             refreshTasks();
+            refreshStats();
         };
 
         const onLeadUpdated = (p = {}) => {
@@ -399,8 +400,8 @@ export default function CallersDashboard() {
                 icon: FiInfo,
                 leadName: s.name,
             });
-            softRefreshAssigned();
             refreshTasks();
+            refreshStats();
         };
 
         const onStatusUpdated = (p = {}) => {
@@ -410,8 +411,8 @@ export default function CallersDashboard() {
                 icon: FiInfo,
                 leadName: s.name,
             });
-            softRefreshAssigned();
             refreshTasks();
+            refreshStats();
         };
 
         const onActivity = (p = {}) => {
@@ -421,8 +422,8 @@ export default function CallersDashboard() {
             notify("Lead activity", `${p?.activity?.action || "Activity"} recorded.`, {
                 leadName: s.name || `Lead #${s.id}`,
             });
-            softRefreshAssigned();
             refreshTasks();
+            refreshStats();
         };
 
         const onCallLogged = (p = {}) => {
@@ -432,8 +433,8 @@ export default function CallersDashboard() {
                 icon: FiPhoneCall,
                 tone: "success",
             });
-            softRefreshAssigned();
             refreshTasks();
+            refreshStats();
         };
 
         const onLeadsAssigned = (p = {}) => {
@@ -441,8 +442,9 @@ export default function CallersDashboard() {
             if (dedupe(`callerDash:leads:assigned:${key}`)) return;
             const n = Array.isArray(p?.leadIds) ? p.leadIds.length : 1;
             notify("Leads assigned", `${n} lead(s) assigned to a caller.`, { icon: FiInfo });
-            softRefreshAssigned();
             refreshTasks();
+            refreshStats();
+
         };
 
         socket.on?.("lead:intake", onLeadIntake);
@@ -465,13 +467,14 @@ export default function CallersDashboard() {
             socket.off?.("lead:logged", onCallLogged);
             socket.off?.("leads:assigned", onLeadsAssigned);
         };
-    }, [socket, isConnected, notify, dedupe, softRefreshAssigned, refreshTasks]);
+    }, [socket, isConnected, notify, dedupe, refreshTasks, refreshStats]);
 
     /* -------------------- computed metrics -------------------- */
     const computed = useMemo(() => {
         const now = new Date();
 
-        const buckets = {
+        // 1. Stats from backend (or defaults)
+        const buckets = stats.buckets || {
             "new lead": 0,
             hot: 0,
             "hot-ip": 0,
@@ -480,45 +483,26 @@ export default function CallersDashboard() {
             dnp: 0,
         };
 
-        let todayNewLeads = 0;
-        let callsMadeToday = 0;
-        let callDurationMin = 0;
-        let idleMin = 0;
-        let lastCallAt = null;
-        let opdBookedToday = 0;
-        let opdDoneToday = 0;
-        let ipdDoneToday = 0;
+        const todayNewLeads = stats.todayNewLeads || 0;
+        const callsMadeToday = stats.callsMadeToday || 0;
+        const callDurationMin = stats.callDurationMin || 0;
+        const idleMin = stats.idleMin || 0;
+        const lastCallAgoMin = stats.lastCallAgoMin || null;
 
-        for (const lead of leads) {
-            const created = parseDate(lead.createdTime);
-            const fd = Array.isArray(lead.fieldData) ? lead.fieldData : [];
+        const opdBookedToday = stats.opdBookedToday || 0;
+        const opdDoneToday = stats.opdDoneToday || 0;
+        const ipdDoneToday = stats.ipdDoneToday || 0;
 
-            // status/bucket
-            const statusRaw = readField(fd, ["status", "lead_status", "bucket"]) || "new lead";
-            const status = normStatus(statusRaw);
-            if (buckets[status] !== undefined) buckets[status]++;
+        // 2. Tasks counts (from API, or use stats if reliable - we use stats.tasksTodayCount/Tomorrow from API)
+        // Actually our backend getDashboardStats also returns tasksTodayCount/tasksTomorrowCount.
+        // But we also fetch the actual tasks list for the "upcoming reminder" list.
+        // Let's use the explicit list length if available, or fallback to stats if list is empty but count > 0? 
+        // Backend stats is arguably more accurate if lists are paginated (though lists here seem to be "all due").
+        // Let's rely on stats for the *Count* display, and the list for the *Reminder* widgets.
+        const tasksTodayCount = stats.tasksTodayCount || todayTasks.length || 0;
+        const tasksTomorrowCount = stats.tasksTomorrowCount || tomorrowTasks.length || 0;
 
-            if (isToday(created)) todayNewLeads++;
-
-            const lastCall = parseDate(readField(fd, ["last_call_at", "last_called_at", "last_call"]));
-            if (lastCall && isToday(lastCall)) callsMadeToday++;
-            if (!lastCallAt || (lastCall && lastCall > lastCallAt)) lastCallAt = lastCall;
-
-            const callDur = Number(readField(fd, ["call_duration_today", "talk_time_today"]));
-            if (!Number.isNaN(callDur)) callDurationMin += callDur;
-
-            const idle = Number(readField(fd, ["idle_minutes_today", "idle_time"]));
-            if (!Number.isNaN(idle)) idleMin += idle;
-
-            if (status === "opd booked" && isToday(created)) opdBookedToday++;
-            if (status === "opd done" && isToday(created)) opdDoneToday++;
-            if (status === "ipd done" && isToday(created)) ipdDoneToday++;
-        }
-
-        // tasks from API
-        const tasksTodayCount = todayTasks.length;
-        const tasksTomorrowCount = tomorrowTasks.length;
-
+        // 3. Upcoming reminders (needs client-side calc on todayTasks)
         const upcomingHour = todayTasks
             .filter((l) => withinNextMinutes(l.followUpAt, 60))
             .map((lead) => {
@@ -528,10 +512,6 @@ export default function CallersDashboard() {
             })
             .sort((a, b) => (a.fuDate?.getTime() || 0) - (b.fuDate?.getTime() || 0))
             .slice(0, 3);
-
-        const lastCallAgoMin = lastCallAt
-            ? Math.max(1, Math.round((now.getTime() - lastCallAt.getTime()) / 60000))
-            : null;
 
         return {
             todayNewLeads,
@@ -547,7 +527,7 @@ export default function CallersDashboard() {
             upcomingHour,
             buckets,
         };
-    }, [leads, todayTasks, tomorrowTasks]);
+    }, [todayTasks, tomorrowTasks, stats]);
 
     // Bucket bars
     const bucketList = useMemo(() => {
@@ -633,6 +613,7 @@ export default function CallersDashboard() {
                         sub="Target: 3/10"
                         icon={<FiPieChart />}
                         accent="amber"
+                        onClick={() => navigate("/caller/leads?date=today&status=opd%20done")}
                     />
                     <StatCard
                         title="IPD Done Today"
@@ -640,6 +621,7 @@ export default function CallersDashboard() {
                         sub="Target: 3/10"
                         icon={<FiPieChart />}
                         accent="indigo"
+                        onClick={() => navigate("/caller/leads?date=today&status=ipd%20done")}
                     />
                 </section>
 
@@ -678,7 +660,7 @@ export default function CallersDashboard() {
                         />
                         <MetricCard
                             title="Idle Time"
-                            value={computed.idleMin}
+                            value={computed.idleMin ? `${computed.idleMin}m` : "0m"}
                             hint={computed.idleMin > 60 ? "High idle time" : "Good pace"}
                             footer={`${computed.idleMin}min`}
                             tone={computed.idleMin > 60 ? "red" : "green"}
@@ -687,10 +669,22 @@ export default function CallersDashboard() {
                         />
                         <MetricCard
                             title="Last Call Made"
-                            value={computed.lastCallAgoMin ? `${computed.lastCallAgoMin}m` : "—"}
-                            hint={computed.lastCallAgoMin ? "Great activity!" : "No call yet today"}
-                            footer={computed.lastCallAgoMin ? `${computed.lastCallAgoMin} mins ago` : "—"}
-                            tone={computed.lastCallAgoMin ? "green" : "orange"}
+                            value={computed.lastCallAgoMin !== null ? formatDurationAgo(computed.lastCallAgoMin) : "—"}
+                            hint={
+                                computed.lastCallAgoMin !== null && computed.lastCallAgoMin < 60
+                                    ? "Great activity!"
+                                    : "Make a call now"
+                            }
+                            footer={
+                                computed.lastCallAgoMin !== null
+                                    ? `${formatDurationAgo(computed.lastCallAgoMin)} ago`
+                                    : "No call yet"
+                            }
+                            tone={
+                                computed.lastCallAgoMin !== null && computed.lastCallAgoMin < 60
+                                    ? "green"
+                                    : "orange"
+                            }
                             max={60}
                             icon={<FiPhoneCall />}
                         />
@@ -798,7 +792,7 @@ export default function CallersDashboard() {
             </div>
 
             {/* Floating Action Button */}
-            <button
+            {/* <button
                 title="Quick actions"
                 className="fixed bottom-6 right-6 group inline-flex items-center justify-center rounded-full p-4 bg-gradient-to-br from-[#ff2e6e] to-[#ff5aa4] text-white shadow-xl hover:opacity-95"
             >
@@ -806,7 +800,7 @@ export default function CallersDashboard() {
                 <span className="absolute -top-1 -right-1 inline-flex items-center justify-center h-6 min-w-6 px-1 rounded-full bg-white text-[#ff2e6e] text-xs font-semibold shadow">
                     3
                 </span>
-            </button>
+            </button> */}
         </main>
     );
 }

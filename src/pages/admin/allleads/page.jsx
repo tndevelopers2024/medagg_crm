@@ -1,6 +1,6 @@
 // src/pages/LeadsManagement.jsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   FiChevronLeft,
   FiChevronRight,
@@ -13,7 +13,7 @@ import BulkEditSidebar from "../../../components/admin/BulkEditSidebar";
 import LeadFilters from "../../../components/admin/leads/LeadFilters";
 import LeadActions from "../../../components/admin/leads/LeadActions";
 import LeadPagination from "../../../components/admin/leads/LeadPagination";
-import { AssignModal, SuccessDialog } from "../../../components/admin/leads/LeadModals";
+import { AssignModal, AssignLocationModal, SuccessDialog } from "../../../components/admin/leads/LeadModals";
 import { parseLead, socketPayloadToLead, summarizeSocketLead, formatPhoneNumber } from "../../../utils/leadHelpers";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useSocket } from "../../../contexts/SocketProvider";
@@ -21,6 +21,15 @@ import { useAuth } from "../../../contexts/AuthContext";
 import Loader from "../../../components/Loader";
 import { createPortal } from "react-dom";
 import { FiX, FiCheckCircle, FiUser, FiMessageSquare, FiCalendar } from "react-icons/fi";
+import SaveFilterTemplateModal from "../../../components/admin/SaveFilterTemplateModal";
+import FilterTemplateDropdown from "../../../components/admin/FilterTemplateDropdown";
+import {
+  fetchFilterTemplates,
+  createFilterTemplate,
+  deleteFilterTemplate,
+  setDefaultTemplate,
+  applyFilterTemplate
+} from "../../../utils/filterTemplateApi";
 
 /* ---------- Toast components (portal + animations) ---------- */
 // Keeping Toast locally for now as it uses local animations and is tightly coupled
@@ -205,6 +214,7 @@ const useSoftRefresh = (setter, fetchFn) => {
 /* ----------------------------- page ----------------------------- */
 export default function LeadsManagement() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, isAdmin, isCaller, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
@@ -224,10 +234,54 @@ export default function LeadsManagement() {
   const [source, setSource] = useState("All Sources");
   const [callerFilter, setCallerFilter] = useState("All Callers");
   const [leadStatus, setLeadStatus] = useState("Lead Status");
+  const [followupFilter, setFollowupFilter] = useState("All");
   const [opdStatus, setOpdStatus] = useState("OPD Status");
   const [ipdStatus, setIpdStatus] = useState("IPD Status");
   const [diagnostics, setDiagnostics] = useState("Diagnostics");
   const [search, setSearch] = useState("");
+
+  // Apply URL parameters on mount
+  // Apply URL parameters on mount
+  useEffect(() => {
+    const urlDate = searchParams.get('date');
+    const urlStatus = searchParams.get('status');
+    const urlView = searchParams.get('view');
+
+    // Handle date parameter
+    if (urlDate === 'today') {
+      setDateMode('Today');
+    }
+    else if (urlDate === 'tasks_today' || urlView === 'tasks_today') {
+      setDateMode('Today');
+    }
+    else if (urlDate === 'tasks_tomorrow' || urlView === 'tasks_tomorrow') {
+      setDateMode('Tomorrow');
+      setFollowupFilter("Scheduled"); // ✅ Auto select Scheduled
+    }
+
+    // Call You Later / Followup View
+    if (urlView === 'call_later' || urlStatus === 'call_later') {
+      setFollowupFilter("Scheduled"); // ✅ Force Scheduled
+    }
+
+    // Handle status parameter
+    if (urlStatus) {
+      const decodedStatus = decodeURIComponent(urlStatus);
+      // Don't force format - trust the URL to match the value, or let case-insensitive search handle it
+      setLeadStatus(decodedStatus);
+    }
+
+  }, [searchParams]);
+
+
+  // Filter templates
+  const [filterTemplates, setFilterTemplates] = useState([]);
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [currentTemplateId, setCurrentTemplateId] = useState(null);
+
+  // Assignment states
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showLocationAssignModal, setShowLocationAssignModal] = useState(false);
 
   // selection
   const [selected, setSelected] = useState(new Set());
@@ -301,6 +355,105 @@ export default function LeadsManagement() {
       mounted = false;
     };
   }, [authLoading, isCaller, effectiveIsCaller, isAdmin, fetchFn]);
+
+  // Load filter templates on mount
+  useEffect(() => {
+    if (!authLoading) {
+      loadFilterTemplates();
+    }
+  }, [authLoading]);
+
+  const loadFilterTemplates = async () => {
+    try {
+      const response = await fetchFilterTemplates();
+      setFilterTemplates(response.data || []);
+
+      // Auto-apply default template if exists and no current template is selected
+      const defaultTemplate = response.data?.find(t => t.isDefault);
+      if (defaultTemplate && !currentTemplateId) {
+        applyTemplate(defaultTemplate);
+      }
+    } catch (error) {
+      console.error('Error loading filter templates:', error);
+      // Only notify if it's a real error, not just 404 (though list endpoint shouldn't 404)
+      if (error?.response?.status !== 404) {
+        notify('Error', 'Failed to load saved filters', { tone: 'error' });
+      }
+    }
+  };
+
+  const applyTemplate = async (template) => {
+    try {
+      // Apply filters
+      setLeadStatus(template.filters.status?.[0] || 'Lead Status');
+      setCallerFilter(template.filters.assignee?.[0] || 'All Callers');
+      setDateMode(template.filters.dateMode || '7d');
+      if (template.filters.dateRange?.start) {
+        setCustomFrom(new Date(template.filters.dateRange.start).toISOString().split('T')[0]);
+      }
+      if (template.filters.dateRange?.end) {
+        setCustomTo(new Date(template.filters.dateRange.end).toISOString().split('T')[0]);
+      }
+      setSource(template.filters.source?.[0] || 'All Sources');
+
+      // Extended filters
+      setFollowupFilter(template.filters.followup?.[0] || 'All');
+      setOpdStatus(template.filters.opd?.[0] || 'OPD Status');
+      setIpdStatus(template.filters.ipd?.[0] || 'IPD Status');
+      setDiagnostics(template.filters.diagnostic?.[0] || 'Diagnostics');
+
+      setSearch(template.filters.searchQuery || '');
+
+      setCurrentTemplateId(template._id);
+
+      // Track usage
+      await applyFilterTemplate(template._id);
+
+      notify('Filter Applied', `Template "${template.name}" applied successfully`, { tone: 'success' });
+    } catch (error) {
+      console.error('Error applying template:', error);
+      notify('Error', 'Failed to apply filter template', { tone: 'error' });
+    }
+  };
+
+  const handleSaveTemplate = async (templateData) => {
+    try {
+      await createFilterTemplate(templateData);
+      await loadFilterTemplates();
+      notify('Template Saved', `Filter template "${templateData.name}" saved successfully`, { tone: 'success' });
+    } catch (error) {
+      console.error('Error saving template:', error);
+      notify('Error', 'Failed to save filter template', { tone: 'error' });
+    }
+  };
+
+  const handleDeleteTemplate = async (id) => {
+    if (!confirm('Delete this filter template?')) return;
+
+    try {
+      await deleteFilterTemplate(id);
+      await loadFilterTemplates();
+      if (currentTemplateId === id) {
+        setCurrentTemplateId(null);
+      }
+      notify('Template Deleted', 'Filter template deleted successfully', { tone: 'success' });
+    } catch (error) {
+      console.error('Error deleting template:', error);
+      notify('Error', 'Failed to delete filter template', { tone: 'error' });
+    }
+  };
+
+  const handleSetDefault = async (id) => {
+    try {
+      await setDefaultTemplate(id);
+      await loadFilterTemplates();
+      notify('Default Set', 'Default filter template updated', { tone: 'success' });
+    } catch (error) {
+      console.error('Error setting default:', error);
+      notify('Error', 'Failed to set default template', { tone: 'error' });
+    }
+  };
+
 
   // notify helper
   const notify = useCallback(
@@ -495,6 +648,16 @@ export default function LeadsManagement() {
     return [...base, ...callers.map((c) => ({ id: c.id, name: c.name }))];
   }, [callers]);
 
+  const followupOptions = useMemo(() => [
+    { label: "Scheduled", value: "Scheduled" },
+    { label: "Today", value: "Today" },
+    { label: "Tomorrow", value: "Tomorrow" },
+    { label: "This Week", value: "This Week" },
+    { label: "Overdue", value: "Overdue" },
+    { label: "Not Scheduled", value: "Not Scheduled" },
+    { label: "All", value: "All" },
+  ], []);
+
   // available fields for bulk edit - create mapping between display labels and field names
   const { availableFields, fieldNameMap } = useMemo(() => {
     const fieldsMap = new Map(); // displayLabel -> fieldName
@@ -571,7 +734,9 @@ export default function LeadsManagement() {
     }
 
     if (source !== "All Sources") list = list.filter((l) => l.source === source);
-    if (leadStatus !== "Lead Status") list = list.filter((l) => l.leadStatus === leadStatus);
+    if (leadStatus !== "Lead Status") {
+      list = list.filter((l) => (l.leadStatus || "").toLowerCase() === leadStatus.toLowerCase());
+    }
     if (opdStatus !== "OPD Status") list = list.filter((l) => l.opdStatus === opdStatus);
     if (ipdStatus !== "IPD Status") list = list.filter((l) => l.ipdStatus === ipdStatus);
     if (diagnostics !== "Diagnostics") list = list.filter((l) => l.diagnostic === diagnostics);
@@ -583,6 +748,49 @@ export default function LeadsManagement() {
           : list.filter((l) => l.assignedTo === callerFilter);
     }
 
+    // Filter by followup status and date
+    if (followupFilter !== "All") {
+      if (followupFilter === "Scheduled") {
+        // Any future follow-up
+        list = list.filter((l) => l.followUpAt && new Date(l.followUpAt) > now);
+      } else if (followupFilter === "Not Scheduled") {
+        // No follow-up or past follow-up
+        list = list.filter((l) => !l.followUpAt || new Date(l.followUpAt) <= now);
+      } else if (followupFilter === "Today") {
+        // Follow-up scheduled for today
+        list = list.filter((l) => {
+          if (!l.followUpAt) return false;
+          const followUpDate = new Date(l.followUpAt);
+          return isSameDay(followUpDate, now);
+        });
+      } else if (followupFilter === "Tomorrow") {
+        // Follow-up scheduled for tomorrow
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        list = list.filter((l) => {
+          if (!l.followUpAt) return false;
+          const followUpDate = new Date(l.followUpAt);
+          return isSameDay(followUpDate, tomorrow);
+        });
+      } else if (followupFilter === "This Week") {
+        // Follow-up scheduled within the next 7 days
+        const weekFromNow = new Date(now);
+        weekFromNow.setDate(weekFromNow.getDate() + 7);
+        list = list.filter((l) => {
+          if (!l.followUpAt) return false;
+          const followUpDate = new Date(l.followUpAt);
+          return followUpDate >= now && followUpDate <= weekFromNow;
+        });
+      } else if (followupFilter === "Overdue") {
+        // Follow-up date has passed
+        list = list.filter((l) => {
+          if (!l.followUpAt) return false;
+          const followUpDate = new Date(l.followUpAt);
+          return followUpDate < now;
+        });
+      }
+    }
+
     return list.sort((a, b) => (b.createdTime || 0) - (a.createdTime || 0));
   }, [
     leads,
@@ -592,6 +800,7 @@ export default function LeadsManagement() {
     source,
     callerFilter,
     leadStatus,
+    followupFilter,
     opdStatus,
     ipdStatus,
     diagnostics,
@@ -633,12 +842,30 @@ export default function LeadsManagement() {
 
   // assign flows
   /* ---------------------- bulk operations ---------------------- */
-  const [showAssignModal, setShowAssignModal] = useState(false);
+
   const [showBulkEdit, setShowBulkEdit] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
   const [successText, setSuccessText] = useState("");
 
   /* ---------------- handlers ---------------- */
+  const handleLocationAssign = async ({ state, city, callerId }) => {
+    try {
+      setLoading(true);
+      // Payload matches backend expectation for bulk query-based assignment
+      const res = await assignLeadsByLocation({ state, city, callerId });
+      setSuccessText(res.message || "Leads assigned successfully");
+      setSuccessOpen(true);
+      await softRefresh();
+      setShowLocationAssignModal(false);
+    } catch (err) {
+      setLoading(false);
+      console.error(err);
+      alert(err?.response?.data?.message || err.message || "Assignment failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleBulkAssignByLocation = async () => {
     if (!selected.size) return;
     if (!window.confirm(`Auto-assign ${selected.size} leads based on location match?`)) return;
@@ -725,6 +952,7 @@ export default function LeadsManagement() {
     setSource("All Sources");
     setCallerFilter("All Callers");
     setLeadStatus("Lead Status");
+    setFollowupFilter("All");
     setOpdStatus("OPD Status");
     setIpdStatus("IPD Status");
     setDiagnostics("Diagnostics");
@@ -829,6 +1057,23 @@ export default function LeadsManagement() {
           <p className="mt-1 text-sm text-gray-500">Manage your leads effectively</p>
         </div>
         <div className="flex gap-2">
+          {/* Filter Templates */}
+          <FilterTemplateDropdown
+            templates={filterTemplates}
+            onSelect={applyTemplate}
+            onDelete={handleDeleteTemplate}
+            onSetDefault={handleSetDefault}
+            currentTemplateId={currentTemplateId}
+          />
+
+          <button
+            onClick={() => setShowSaveTemplateModal(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#E9296A] px-4 py-2 text-sm font-medium text-white hover:bg-[#d12560] transition-colors"
+          >
+            <FiCheckCircle className="w-4 h-4" />
+            Save Filter
+          </button>
+
           <button
             onClick={resetFilters}
             className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50"
@@ -847,10 +1092,12 @@ export default function LeadsManagement() {
           source={source} setSource={setSource} sourceOptions={sourceOptions}
           caller={callerFilter} setCaller={setCallerFilter} callerOptions={isAdmin ? callerOptions : []}
           status={leadStatus} setStatus={setLeadStatus} statusOptions={leadStatusOptions}
+          followup={followupFilter} setFollowup={setFollowupFilter} followupOptions={followupOptions}
           opd={opdStatus} setOpd={setOpdStatus} opdOptions={opdOptions}
           ipd={ipdStatus} setIpd={setIpdStatus} ipdOptions={ipdOptions}
           diag={diagnostics} setDiag={setDiagnostics} diagOptions={diagOptions}
           search={search} setSearch={setSearch}
+          fieldConfigs={fieldConfigs}
         />
       </section>
 
@@ -1021,7 +1268,56 @@ export default function LeadsManagement() {
           </div>
         </div>
 
+        {/* Location Assign Button */}
+        {isAdmin && (
+          <div className="p-4 border-t bg-gray-50 flex justify-end">
+            <button
+              onClick={() => setShowLocationAssignModal(true)}
+              className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+            >
+              📍 Assign by Location
+            </button>
+          </div>
+        )}
       </section>
+
+      {/* Assignment Modals */}
+      <AssignModal
+        open={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        callers={callers}
+        onConfirm={handleBulkAssign}
+        count={selected.size}
+      />
+      <AssignLocationModal
+        open={showLocationAssignModal}
+        onClose={() => setShowLocationAssignModal(false)}
+        callers={callers}
+        onConfirm={handleLocationAssign}
+      />
+
+      {/* Filter Template Modal */}
+      <SaveFilterTemplateModal
+        isOpen={showSaveTemplateModal}
+        onClose={() => setShowSaveTemplateModal(false)}
+        currentFilters={{
+          status: [leadStatus],
+          assignee: [callerFilter],
+          source: [source],
+          followup: [followupFilter],
+          opd: [opdStatus],
+          ipd: [ipdStatus],
+          diagnostic: [diagnostics],
+          dateMode,
+          dateRange: { start: customFrom || null, end: customTo || null },
+          searchQuery: search
+        }}
+        currentSorting={{
+          field: 'createdAt', // Default for now
+          order: 'desc'
+        }}
+        onSave={handleSaveTemplate}
+      />
 
       <style>{`
         @keyframes rowFlash {

@@ -275,6 +275,7 @@ function CallerModal({ open, mode, initialData, onClose, onSubmit }) {
     name: "",
     email: "",
     phone: "",
+    city: "", // Added city
     state: "", // Added state
     password: "",
   });
@@ -286,11 +287,12 @@ function CallerModal({ open, mode, initialData, onClose, onSubmit }) {
           name: initialData.name || "",
           email: initialData.email || "",
           phone: initialData.phone || "",
+          city: initialData.city || "", // Added city
           state: initialData.state || "", // Populate state
           password: "", // Leave empty to keep unchanged
         });
       } else {
-        setFormData({ name: "", email: "", phone: "", state: "", password: "" });
+        setFormData({ name: "", email: "", phone: "", city: "", state: "", password: "" });
       }
     }
   }, [open, mode, initialData]);
@@ -340,16 +342,28 @@ function CallerModal({ open, mode, initialData, onClose, onSubmit }) {
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               />
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">State</label>
-              <input
-                required
-                type="text"
-                placeholder="e.g. Tamil Nadu"
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#7d3bd6]"
-                value={formData.state}
-                onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">City</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Chennai"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#7d3bd6]"
+                  value={formData.city}
+                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">State</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="e.g. Tamil Nadu"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-[#7d3bd6]"
+                  value={formData.state}
+                  onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                />
+              </div>
             </div>
           </div>
           <div>
@@ -620,6 +634,8 @@ export default function Callers() {
         name: c.name || "—",
         email: c.email || "—",
         phone: c.phone || "—",
+        city: c.city || "",   // Added city
+        state: c.state || "", // Added state
         avatar: avatarFor(c),
         leads: 0,
         uncontacted: 0,

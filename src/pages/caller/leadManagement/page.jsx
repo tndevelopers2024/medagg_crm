@@ -41,6 +41,8 @@ import {
   fetchLeadStages,
   BASE_URL,
 } from "../../../utils/api";
+import { useAuth } from "../../../contexts/AuthContext";
+
 
 // ... existing helpers ...
 
@@ -276,6 +278,7 @@ const Textarea = ({ label, ...p }) => (
 // ---------- page ----------
 export default function LeadManagement() {
   const { id } = useParams(); // /:role/leads/:id
+  const { isCaller } = useAuth();
   const q = useQuery();
   const navigate = useNavigate();
   usePageTitle("Lead Management");
@@ -298,6 +301,13 @@ export default function LeadManagement() {
 
   // right card
   const [status, setStatus] = useState("new");
+  const [initialStatus, setInitialStatus] = useState(null); // Track initial status
+  const [newBookingAdded, setNewBookingAdded] = useState(false); // Track if a booking was added
+
+  const hasStatusChanged = useMemo(() => {
+    return initialStatus !== null && status !== initialStatus;
+  }, [status, initialStatus]);
+
   const [notes, setNotes] = useState("");
   const [opdBooked, setOpdBooked] = useState(false);
 
@@ -374,7 +384,9 @@ export default function LeadManagement() {
         setLeadData(fieldDataObj);
 
         // 3) Set status and notes
+        // 3) Set status and notes
         setStatus(detail?.status || "new");
+        setInitialStatus(detail?.status || "new"); // Set initial status
         setNotes(detail?.notes || "");
         setOpdBooked(
           ["yes", "true", "booked"].includes((fieldDataObj.opd_booked || "").toLowerCase())
@@ -423,6 +435,15 @@ export default function LeadManagement() {
 
   const handleSave = async () => {
     if (!id) return;
+
+    // MANDATORY STATUS UPDATE CHECK
+    // Mandatory for caller, UNLESS they added/updated a booking (which is significant action)
+    if (isCaller && !hasStatusChanged && !newBookingAdded) {
+      toast.error("Please update the lead status before saving.");
+      return;
+    }
+
+
     setSaving(true);
     try {
       const details = await updateLeadDetails(id, {
@@ -507,7 +528,7 @@ export default function LeadManagement() {
     if (!lead) return;
 
     const name = leadData.full_name || leadData.name || "Unknown";
-    const statusLabel = leadStages.find(s => s.stageName === status)?.displayLabel || status || "New";
+    const statusLabel = leadStages.find(s => s.stageName === status)?.displayLabel || status || "new";
     const createdDate = lead.createdTime ? new Date(lead.createdTime).toLocaleString('en-IN', {
       hour: '2-digit',
       minute: '2-digit',
@@ -618,6 +639,7 @@ export default function LeadManagement() {
         surgery: "",
         payment: "",
       });
+      setNewBookingAdded(true); // Permit exit
       await loadActivities();
       toast.success("OP booking added");
     } catch (e) {
@@ -695,6 +717,7 @@ export default function LeadManagement() {
         status: "pending",
         payment: "",
       });
+      setNewBookingAdded(true); // Permit exit
       await loadActivities();
       toast.success("IP booking added");
     } catch (e) {
@@ -770,7 +793,15 @@ export default function LeadManagement() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => navigate(-1)}
+                onClick={() => {
+                  if (isCaller && !hasStatusChanged && !newBookingAdded) {
+                    toast.error("Please update the lead status before leaving.");
+                    return;
+                  }
+
+                  navigate(-1);
+                }}
+
                 className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 hover:bg-gray-50"
                 title="Back"
               >
@@ -874,7 +905,7 @@ export default function LeadManagement() {
           <div className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-1">
-                <label className="text-xs text-gray-600">Status</label>
+                <label className="text-xs text-gray-600">Status<span class="text-red-500 ml-1">*</span></label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
@@ -982,7 +1013,7 @@ export default function LeadManagement() {
                 </button>
               </div>
 
-              {/* Call you later */}
+              {/* Call later */}
               <div className="pt-2 flex items-center justify-between">
                 <div className="text-xs text-gray-600">
                   Next follow-up:{" "}
@@ -995,7 +1026,7 @@ export default function LeadManagement() {
                   className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-sm text-violet-700 hover:bg-violet-100"
                   title="Schedule a follow-up"
                 >
-                  <FiClock /> Call you later
+                  <FiClock /> Call later
                 </button>
               </div>
             </div>
@@ -1422,7 +1453,7 @@ export default function LeadManagement() {
         </section>
       </div >
 
-      {/* ---- Call you later modal ---- */}
+      {/* ---- Call later modal ---- */}
       {
         showLaterModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
