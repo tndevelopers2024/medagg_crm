@@ -52,11 +52,16 @@ export const parseLead = (lead) => {
                 ? `Campaign ${lead.campaignId}`
                 : "Unknown");
 
+    const assignedToRaw = lead.assignedTo || null;
+    const assignedTo = (assignedToRaw && typeof assignedToRaw === 'object') ? assignedToRaw._id : assignedToRaw;
+    const assignedToUser = (assignedToRaw && typeof assignedToRaw === 'object') ? assignedToRaw : null;
+
     return {
         id: lead._id || lead.id || lead.leadId,
         createdTime,
         lastUpdate,
-        assignedTo: lead.assignedTo || null,
+        assignedTo, // Always ID string or null
+        assignedToUser, // Full Object or null
         campaignId: lead.campaignId || null,
         adId: lead.adId || null,
         source,

@@ -437,8 +437,9 @@ export default function LeadManagement() {
     if (!id) return;
 
     // MANDATORY STATUS UPDATE CHECK
-    // Mandatory for caller, UNLESS they added/updated a booking (which is significant action)
-    if (isCaller && !hasStatusChanged && !newBookingAdded) {
+    // Mandatory for caller ONLY if it's a NEW lead, UNLESS they added/updated a booking
+    const isInitialNew = ["new", "new lead"].includes((initialStatus || "").toLowerCase());
+    if (isCaller && isInitialNew && !hasStatusChanged && !newBookingAdded) {
       toast.error("Please update the lead status before saving.");
       return;
     }
@@ -794,11 +795,12 @@ export default function LeadManagement() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
-                  if (isCaller && !hasStatusChanged && !newBookingAdded) {
+                  // Relaxed check: Only enforce status change if start status was 'new'
+                  const isInitialNew = ["new", "new lead"].includes((initialStatus || "").toLowerCase());
+                  if (isCaller && isInitialNew && !hasStatusChanged && !newBookingAdded) {
                     toast.error("Please update the lead status before leaving.");
                     return;
                   }
-
                   navigate(-1);
                 }}
 

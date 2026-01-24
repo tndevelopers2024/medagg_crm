@@ -737,9 +737,8 @@ export default function Callers() {
                 <th className="text-left text-[16px] font-medium px-4 py-4">Caller</th>
                 <th className="text-left text-[16px] font-medium px-4 py-4">Email</th>
                 <th className="text-left text-[16px] font-medium px-4 py-4">Phone</th>
-                <th className="text-left text-[16px] font-medium px-4 py-4">Assigned Leads</th>
-                <th className="text-left text-[16px] font-medium px-4 py-4">Uncontacted</th>
-                <th className="text-left text-[16px] font-medium px-4 py-4">Last Update</th>
+                <th className="text-left text-[16px] font-medium px-4 py-4">City</th>
+                <th className="text-left text-[16px] font-medium px-4 py-4">State</th>
                 <th className="text-left text-[16px] font-medium px-4 py-4">Actions</th>
               </tr>
             </thead>
@@ -766,13 +765,8 @@ export default function Callers() {
                   </td>
                   <td className="px-4 py-4 text-gray-700">{c.email}</td>
                   <td className="px-4 py-4 text-gray-700">{c.phone}</td>
-                  <td className="px-4 py-4 font-semibold">{c.leads}</td>
-                  <td className="px-4 py-4">
-                    <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
-                      {c.uncontacted}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-gray-600">{fmtAgo(c.lastUpdate)}</td>
+                  <td className="px-4 py-4 text-gray-700">{c.city}</td>
+                  <td className="px-4 py-4 text-gray-700">{c.state}</td>
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link

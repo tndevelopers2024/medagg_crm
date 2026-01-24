@@ -1173,9 +1173,11 @@ export default function LeadsManagement() {
                           {lead.assignedTo ? (
                             <div className="flex items-center gap-2">
                               <div className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-600">
-                                {(callerMap.get(lead.assignedTo)?.name || "U")[0]}
+                                {(lead.assignedToUser?.name || callerMap.get(lead.assignedTo)?.name || "U")[0]}
                               </div>
-                              <span className="truncate max-w-[100px]">{callerMap.get(lead.assignedTo)?.name || "Unknown"}</span>
+                              <span className="truncate max-w-[100px]">
+                                {lead.assignedToUser?.name || callerMap.get(lead.assignedTo)?.name || "Unknown"}
+                              </span>
                             </div>
                           ) : (
                             <span className="text-gray-400 italic">Unassigned</span>
