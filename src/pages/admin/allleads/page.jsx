@@ -8,7 +8,7 @@ import {
   FiPhoneCall,
   FiInfo,
 } from "react-icons/fi";
-import { fetchAllLeads, fetchAssignedLeads, getAllUsers, assignLeadsToCaller, assignLeadsByLocation, bulkUpdateLeads, fetchLeadFields, fetchLeadStages } from "../../../utils/api";
+import { fetchAllLeads, fetchAssignedLeads, getAllUsers, assignLeadsToCaller, assignLeadsByLocation, bulkUpdateLeads, fetchLeadFields, fetchLeadStages, fetchCampaigns } from "../../../utils/api";
 import BulkEditSidebar from "../../../components/admin/BulkEditSidebar";
 import LeadFilters from "../../../components/admin/leads/LeadFilters";
 import LeadActions from "../../../components/admin/leads/LeadActions";
@@ -221,6 +221,7 @@ export default function LeadsManagement() {
   const [callers, setCallers] = useState([]);
   const [fieldConfigs, setFieldConfigs] = useState([]);
   const [leadStages, setLeadStages] = useState([]); // Dynamic lead stages
+  const [campaigns, setCampaigns] = useState([]);
   const { socket, isConnected } = useSocket();
   const { toasts, push, remove } = useToasts();
 
@@ -329,11 +330,12 @@ export default function LeadsManagement() {
         // Fetch leads based on role
         const leadsPromise = fetchFn();
 
-        const [all, users, fieldsRes, stagesRes] = await Promise.all([
+        const [all, users, fieldsRes, stagesRes, campaignsRes] = await Promise.all([
           leadsPromise,
           isAdmin ? getAllUsers({ role: "caller" }) : Promise.resolve([]),
           fetchLeadFields({ active: true }),
-          fetchLeadStages({ active: true })
+          fetchLeadStages({ active: true }),
+          fetchCampaigns()
         ]);
         if (!mounted) return;
 
@@ -344,6 +346,10 @@ export default function LeadsManagement() {
         setCallers(users.filter((u) => (u.role || "").toLowerCase() === "caller"));
         setFieldConfigs(fieldsRes.data || []);
         setLeadStages(stagesRes.data || []);
+        setCallers(users.filter((u) => (u.role || "").toLowerCase() === "caller"));
+        setFieldConfigs(fieldsRes.data || []);
+        setLeadStages(stagesRes.data || []);
+        setCampaigns(campaignsRes?.data || []);
       } catch (e) {
         console.error('AllLeads - Error loading data:', e);
         console.error('AllLeads - Error response:', e?.response?.data);
@@ -595,13 +601,28 @@ export default function LeadsManagement() {
     };
   }, [socket, isConnected, dedupe, softRefresh, addHighlight, notify]);
 
+  const campaignMap = useMemo(() => {
+    const m = new Map();
+    campaigns.forEach((c) => {
+      m.set(c.id, c.name);
+      if (c._id) m.set(c._id, c.name);
+      if (c.integration?.externalId) m.set(c.integration.externalId, c.name);
+      if (c.integration?.metaCampaignId) m.set(c.integration.metaCampaignId, c.name);
+    });
+    return m;
+  }, [campaigns]);
+
   // parsed & maps
-  const leads = useMemo(() => rows.map(parseLead), [rows]);
+  const leads = useMemo(() => rows.map((r) => parseLead(r, campaignMap)), [rows, campaignMap]);
   const callerMap = useMemo(() => {
     const m = new Map();
     callers.forEach((c) => m.set(c.id, c));
     return m;
   }, [callers]);
+
+
+
+
   const callerCounts = useMemo(() => {
     const counts = new Map();
     leads.forEach((l) => {

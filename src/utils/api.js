@@ -15,7 +15,7 @@ export {
 export const BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
   (window.location.hostname === "localhost"
-    ? "https://medagg.online/api/v1"
+    ? "http://localhost:5013/api/v1"
     : "https://medagg.online/api/v1");
 
 const api = axios.create({
@@ -479,6 +479,33 @@ export const fetchMyStats = async () => {
  */
 export const fetchDashboardStats = async () => {
   const { data } = await api.get("/caller/stats/dashboard");
+  return data;
+};
+
+/**
+ * GET /admin/stats/dashboard
+ * Admin version - aggregates stats across all callers
+ */
+export const fetchAdminDashboardStats = async () => {
+  const { data } = await api.get("/leads/admin/stats/dashboard");
+  return data;
+};
+
+/**
+ * GET /admin/stats/activity
+ * Admin activity stats - detailed breakdown by caller
+ */
+export const fetchAdminActivityStats = async () => {
+  const { data } = await api.get("/leads/admin/stats/activity");
+  return data;
+};
+
+/**
+ * GET /admin/stats/caller/:callerId
+ * Detailed stats for a specific caller
+ */
+export const fetchCallerDetailStats = async (callerId) => {
+  const { data } = await api.get(`/leads/admin/stats/caller/${callerId}`);
   return data;
 };
 

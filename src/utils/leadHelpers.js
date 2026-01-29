@@ -17,7 +17,7 @@ export const readField = (fieldData = [], keys = []) => {
     return "";
 };
 
-export const parseLead = (lead) => {
+export const parseLead = (lead, campaignMap = new Map()) => {
     const name =
         readField(lead.fieldData, ["full_name", "lead_name", "name"]) ||
         readField(lead.fieldData, ["first_name"]) ||
@@ -44,13 +44,11 @@ export const parseLead = (lead) => {
         (lead.createdAt && new Date(lead.createdAt)) ||
         createdTime;
 
+    const campaignName = lead.campaignId ? (campaignMap.get(lead.campaignId) || `Campaign ${lead.campaignId}`) : "";
+
     const source =
         readField(lead.fieldData, ["source"]) ||
-        (String(lead.campaignId || "").toLowerCase().includes("meta")
-            ? "Meta Ads"
-            : lead.campaignId
-                ? `Campaign ${lead.campaignId}`
-                : "Unknown");
+        (campaignName ? campaignName : "Unknown");
 
     const assignedToRaw = lead.assignedTo || null;
     const assignedTo = (assignedToRaw && typeof assignedToRaw === 'object') ? assignedToRaw._id : assignedToRaw;
@@ -65,6 +63,7 @@ export const parseLead = (lead) => {
         campaignId: lead.campaignId || null,
         adId: lead.adId || null,
         source,
+        campaignName,
         name,
         phone,
         leadStatus,

@@ -26,6 +26,7 @@ import LeadManagement from "./pages/caller/leadManagement/page.jsx";
 import CreateLeadPage from "./pages/leads/CreateLeadPage.jsx";
 import DuplicateManagementPage from "./pages/admin/duplicates/page.jsx";
 import AnalyticsPage from "./pages/admin/analytics/page.jsx";
+import AdminReportsPage from "./pages/admin/reports/page.jsx";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
@@ -57,6 +58,7 @@ createRoot(document.getElementById("root")).render(
               <Route path="/admin/booking-field-settings" element={<BookingFieldSettingsPage />} />
               <Route path="/admin/lead-stages" element={<LeadStagesPage />} />
               <Route path="/admin/analytics" element={<AnalyticsPage />} />
+              <Route path="/admin/reports/:callerId" element={<AdminReportsPage />} />
 
               {/* Caller routes (use same components with role-based rendering) */}
               <Route path="/caller/dashboard" element={<CallerDashboard />} />

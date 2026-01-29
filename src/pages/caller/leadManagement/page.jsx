@@ -39,6 +39,8 @@ import {
   fetchLeadFields,
   fetchBookingFields,
   fetchLeadStages,
+  fetchCampaigns,
+  fetchLeadCallLogs,
   BASE_URL,
 } from "../../../utils/api";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -294,10 +296,22 @@ export default function LeadManagement() {
   const [opFields, setOpFields] = useState([]);
   const [ipFields, setIpFields] = useState([]);
   const [leadStages, setLeadStages] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
   const [fieldsLoading, setFieldsLoading] = useState(true);
 
   // Dynamic lead data (replaces hardcoded form)
   const [leadData, setLeadData] = useState({});
+
+  const campaignMap = useMemo(() => {
+    const m = new Map();
+    campaigns.forEach((c) => {
+      m.set(c.id, c.name);
+      if (c._id) m.set(c._id, c.name);
+      if (c.integration?.externalId) m.set(c.integration.externalId, c.name);
+      if (c.integration?.metaCampaignId) m.set(c.integration.metaCampaignId, c.name);
+    });
+    return m;
+  }, [campaigns]);
 
   // right card
   const [status, setStatus] = useState("new");
@@ -323,6 +337,7 @@ export default function LeadManagement() {
 
   // activities from backend
   const [activities, setActivities] = useState([]);
+  const [callLogs, setCallLogs] = useState([]);
   const [actsLoading, setActsLoading] = useState(false);
   const [expanded, setExpanded] = useState({}); // activityId -> boolean
   const toggleExpand = (aid) => setExpanded((s) => ({ ...s, [aid]: !s[aid] }));
@@ -331,8 +346,12 @@ export default function LeadManagement() {
     if (!id) return;
     try {
       setActsLoading(true);
-      const res = await fetchLeadActivities(id, { limit: 50 });
-      setActivities(res.activities || []);
+      const [actRes, logsRes] = await Promise.all([
+        fetchLeadActivities(id, { limit: 50 }),
+        fetchLeadCallLogs(id)
+      ]);
+      setActivities(actRes.activities || []);
+      setCallLogs(logsRes.logs || []);
     } catch (e) {
       console.error("fetchLeadActivities error:", e);
     } finally {
@@ -340,21 +359,39 @@ export default function LeadManagement() {
     }
   }, [id]);
 
+  // Auto-populate source from campaign name
+  useEffect(() => {
+    if (!lead || !campaignMap.size) return;
+    const cid = lead.campaignId;
+
+    // Logic: If there is a campaign ID, we want to show the campaign name
+    if (cid) {
+      const mapped = campaignMap.get(cid) || `Campaign ${cid}`;
+      setLeadData(prev => {
+        // Only update if it's not already set to this name
+        if (prev.source === mapped) return prev;
+        return { ...prev, source: mapped };
+      });
+    }
+  }, [lead, campaignMap]);
+
   // Load field configurations
   useEffect(() => {
     const loadConfigs = async () => {
       try {
         setFieldsLoading(true);
-        const [leadRes, opRes, ipRes, stagesRes] = await Promise.all([
+        const [leadRes, opRes, ipRes, stagesRes, campaignsRes] = await Promise.all([
           fetchLeadFields({ active: "true" }),
           fetchBookingFields({ type: "OP", active: "true" }),
           fetchBookingFields({ type: "IP", active: "true" }),
           fetchLeadStages({ active: "true" }),
+          fetchCampaigns(),
         ]);
         if (leadRes.success) setLeadFields(leadRes.data);
         if (opRes.success) setOpFields(opRes.data);
         if (ipRes.success) setIpFields(ipRes.data);
         if (stagesRes.success) setLeadStages(stagesRes.data);
+        setCampaigns(campaignsRes?.data || []);
       } catch (err) {
         console.error("Error loading field configs:", err);
       } finally {
@@ -428,6 +465,72 @@ export default function LeadManagement() {
 
     return grouped;
   }, [leadStages]);
+
+  // Find the actual campaign object for detailed display
+  const currentCampaign = useMemo(() => {
+    if (!lead || !lead.campaignId) return null;
+    return campaigns.find(c =>
+      c.id === lead.campaignId ||
+      c._id === lead.campaignId ||
+      c.integration?.externalId === lead.campaignId ||
+      c.integration?.metaCampaignId === lead.campaignId
+    );
+  }, [lead, campaigns]);
+
+  const combinedFields = useMemo(() => {
+    if (!lead || !lead.fieldData) return leadFields;
+
+    const existingKeys = new Set(leadFields.map((f) => (f.fieldName || "").toLowerCase()));
+
+    // Fields to explicitly ignore (handled by other UI)
+    const ignored = new Set([
+      "source", "lead_status", "status", "rating", "opd_booked",
+      "campaign_id", "ad_id", "adset_id", "form_id", "platform",
+      "opd_status", "ipd_status", "diagnostic"
+    ]);
+
+    const extras = [];
+    lead.fieldData.forEach((f) => {
+      const name = (f.name || "").toLowerCase();
+      if (!name) return;
+      if (existingKeys.has(name)) return;
+      if (ignored.has(name)) return;
+
+      // Create a virtual field config
+      extras.push({
+        _id: `virt_${name}`,
+        fieldName: f.name,
+        displayLabel: f.name.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+        fieldType: "text", // Default to text input
+        isRequired: false,
+        placeholder: f.values?.[0] || "",
+        isVirtual: true,
+      });
+    });
+
+    return [...leadFields, ...extras];
+  }, [leadFields, lead]);
+
+
+
+  // Calculate Call Stats
+  const callStats = useMemo(() => {
+    const totalCalls = callLogs.length;
+    const connectedCalls = callLogs.filter(l => l.outcome === 'connected').length;
+    const totalDurationSec = callLogs.reduce((acc, l) => acc + (l.durationSec || 0), 0);
+
+    const h = Math.floor(totalDurationSec / 3600);
+    const m = Math.floor((totalDurationSec % 3600) / 60);
+    const s = totalDurationSec % 60;
+
+    // Format: "1h 2m 3s" or "5m 20s"
+    let durationStr = "";
+    if (h > 0) durationStr += `${h}h `;
+    if (m > 0 || h > 0) durationStr += `${m}m `;
+    durationStr += `${s}s`;
+
+    return { totalCalls, connectedCalls, durationStr };
+  }, [callLogs]);
 
   const handleLeadFieldChange = (fieldName, value) => {
     setLeadData((prev) => ({ ...prev, [fieldName]: value }));
@@ -891,7 +994,7 @@ export default function LeadManagement() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {leadFields.map((field) => (
+                {combinedFields.map((field) => (
                   <DynamicField
                     key={field._id}
                     field={field}
@@ -906,6 +1009,12 @@ export default function LeadManagement() {
           {/* Right status + notes */}
           <div className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
             <div className="grid grid-cols-1 gap-4">
+              <Input
+                label="Lead Source"
+                value={leadData.source || ""}
+                onChange={(e) => handleLeadFieldChange("source", e.target.value)}
+                placeholder="Source"
+              />
               <div className="space-y-1">
                 <label className="text-xs text-gray-600">Status<span class="text-red-500 ml-1">*</span></label>
                 <select
@@ -1030,6 +1139,53 @@ export default function LeadManagement() {
                 >
                   <FiClock /> Call later
                 </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Campaign Details Card */}
+          {currentCampaign && (
+            <div className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
+              <h3 className="mb-3 text-base font-semibold text-gray-900">Campaign Details</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between border-b border-gray-50 pb-2">
+                  <span className="text-xs text-gray-500">Name</span>
+                  <span className="text-sm font-medium text-gray-900 text-right">{currentCampaign.name}</span>
+                </div>
+                <div className="flex justify-between border-b border-gray-50 pb-2">
+                  <span className="text-xs text-gray-500">Platform</span>
+                  <span className="text-sm font-medium text-gray-900 capitalize">{currentCampaign.platform}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs text-gray-500">Status</span>
+                  <span className={cls(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                    currentCampaign.status === "active" ? "bg-green-100 text-green-800" :
+                      currentCampaign.status === "paused" ? "bg-yellow-100 text-yellow-800" :
+                        "bg-gray-100 text-gray-800"
+                  )}>
+                    {currentCampaign.status ? currentCampaign.status.toUpperCase() : "UNKNOWN"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Call Statistics Card */}
+          <div className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
+            <h3 className="mb-3 text-base font-semibold text-gray-900">Call Statistics</h3>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-violet-50 p-2">
+                <div className="text-xs text-violet-600 mb-1">Total</div>
+                <div className="text-lg font-bold text-violet-700">{callStats.totalCalls}</div>
+              </div>
+              <div className="rounded-xl bg-emerald-50 p-2">
+                <div className="text-xs text-emerald-600 mb-1">Conn.</div>
+                <div className="text-lg font-bold text-emerald-700">{callStats.connectedCalls}</div>
+              </div>
+              <div className="rounded-xl bg-amber-50 p-2">
+                <div className="text-xs text-amber-600 mb-1">Duration</div>
+                <div className="text-sm font-bold text-amber-700 flex items-center justify-center h-7">{callStats.durationStr || "0s"}</div>
               </div>
             </div>
           </div>
@@ -1213,39 +1369,80 @@ export default function LeadManagement() {
               <ul className="space-y-3">
                 {opBookings.map((b) => {
                   const bid = String(b.id || b._id);
+                  // Extract values from fieldData array
+                  const getBookingField = (fieldName) => readField(b.fieldData || [], [fieldName]);
+                  const date = b.date || getBookingField("date") || getBookingField("appointment_date");
+                  const time = b.time || getBookingField("time") || getBookingField("appointment_time");
+                  const hospital = b.hospital || getBookingField("hospital") || getBookingField("hospital_name");
+                  const doctor = b.doctor || getBookingField("doctor") || getBookingField("doctor_name");
+                  const surgery = b.surgery || getBookingField("surgery") || getBookingField("procedure");
+                  const payment = b.payment || getBookingField("payment") || getBookingField("amount");
+                  const remarks = b.remarks || getBookingField("remarks") || getBookingField("notes");
+
                   return (
                     <li
                       key={bid}
-                      className="rounded-xl border border-gray-100 p-3 flex items-center justify-between"
+                      className="rounded-xl border border-gray-100 p-3"
                     >
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">
-                          {fmtDate(b.date)} {b.time ? `• ${b.time}` : ""} —{" "}
-                          {b.hospital || "—"}
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 text-sm">
+                              {date ? fmtDate(date) : "—"} {time ? `• ${time}` : ""}
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              {hospital || "No hospital specified"}
+                            </div>
+                          </div>
+                          <span className={cls(
+                            "px-2 py-0.5 rounded-full text-xs font-medium",
+                            b.status === "done" ? "bg-emerald-50 text-emerald-700" :
+                              b.status === "pending" ? "bg-amber-50 text-amber-700" :
+                                "bg-gray-50 text-gray-700"
+                          )}>
+                            {b.status || "pending"}
+                          </span>
                         </div>
-                        <div className="text-gray-600">
-                          Dr. {b.doctor || "—"} • {b.surgery || "—"} • ₹
-                          {Number(b.payment || 0)}
+
+                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                          {doctor && (
+                            <div>
+                              <span className="font-medium">Doctor:</span> {doctor}
+                            </div>
+                          )}
+                          {surgery && (
+                            <div>
+                              <span className="font-medium">Surgery:</span> {surgery}
+                            </div>
+                          )}
+                          {payment && (
+                            <div>
+                              <span className="font-medium">Payment:</span> ₹{Number(payment).toLocaleString()}
+                            </div>
+                          )}
+                          {remarks && (
+                            <div className="col-span-2">
+                              <span className="font-medium">Remarks:</span> {remarks}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-xs text-gray-500">
-                          Status: {b.status}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {b.status !== "done" && (
+
+                        <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                          {b.status !== "done" && (
+                            <button
+                              onClick={() => handleDoneOp(bid)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-emerald-700 text-xs hover:bg-emerald-100"
+                            >
+                              <FiCheckCircle /> Done
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleDoneOp(bid)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-emerald-700 text-xs hover:bg-emerald-100"
+                            onClick={() => handleRemoveOp(bid)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-rose-700 text-xs hover:bg-rose-100"
                           >
-                            <FiCheckCircle /> Done
+                            <FiTrash2 /> Delete
                           </button>
-                        )}
-                        <button
-                          onClick={() => handleRemoveOp(bid)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-rose-700 text-xs hover:bg-rose-100"
-                        >
-                          <FiTrash2 /> Delete
-                        </button>
+                        </div>
                       </div>
                     </li>
                   );
@@ -1267,39 +1464,80 @@ export default function LeadManagement() {
               <ul className="space-y-3">
                 {ipBookings.map((b) => {
                   const bid = String(b.id || b._id);
+                  // Extract values from fieldData array
+                  const getBookingField = (fieldName) => readField(b.fieldData || [], [fieldName]);
+                  const date = b.date || getBookingField("date") || getBookingField("admission_date");
+                  const time = b.time || getBookingField("time") || getBookingField("admission_time");
+                  const hospital = b.hospital || getBookingField("hospital") || getBookingField("hospital_name");
+                  const doctor = b.doctor || getBookingField("doctor") || getBookingField("doctor_name");
+                  const caseType = b.caseType || getBookingField("case") || getBookingField("casetype") || getBookingField("case_type");
+                  const payment = b.payment || getBookingField("payment") || getBookingField("amount");
+                  const remarks = b.remarks || getBookingField("remarks") || getBookingField("notes");
+
                   return (
                     <li
                       key={bid}
-                      className="rounded-2xl border border-gray-100 p-3 flex items-center justify-between"
+                      className="rounded-xl border border-gray-100 p-3"
                     >
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">
-                          {fmtDate(b.date)} {b.time ? `• ${b.time}` : ""} —{" "}
-                          {b.hospital || "—"}
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 text-sm">
+                              {date ? fmtDate(date) : "—"} {time ? `• ${time}` : ""}
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              {hospital || "No hospital specified"}
+                            </div>
+                          </div>
+                          <span className={cls(
+                            "px-2 py-0.5 rounded-full text-xs font-medium",
+                            b.status === "done" ? "bg-emerald-50 text-emerald-700" :
+                              b.status === "pending" ? "bg-amber-50 text-amber-700" :
+                                "bg-gray-50 text-gray-700"
+                          )}>
+                            {b.status || "pending"}
+                          </span>
                         </div>
-                        <div className="text-gray-600">
-                          Dr. {b.doctor || "—"} • Case: {b.caseType || "—"} • ₹
-                          {Number(b.payment || 0)}
+
+                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                          {doctor && (
+                            <div>
+                              <span className="font-medium">Doctor:</span> {doctor}
+                            </div>
+                          )}
+                          {caseType && (
+                            <div>
+                              <span className="font-medium">Case:</span> {caseType}
+                            </div>
+                          )}
+                          {payment && (
+                            <div>
+                              <span className="font-medium">Payment:</span> ₹{Number(payment).toLocaleString()}
+                            </div>
+                          )}
+                          {remarks && (
+                            <div className="col-span-2">
+                              <span className="font-medium">Remarks:</span> {remarks}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-xs text-gray-500">
-                          Status: {b.status}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {b.status !== "done" && (
+
+                        <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                          {b.status !== "done" && (
+                            <button
+                              onClick={() => handleDoneIp(bid)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-emerald-700 text-xs hover:bg-emerald-100"
+                            >
+                              <FiCheckCircle /> Done
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleDoneIp(bid)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-emerald-700 text-xs hover:bg-emerald-100"
+                            onClick={() => handleRemoveIp(bid)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-rose-700 text-xs hover:bg-rose-100"
                           >
-                            <FiCheckCircle /> Done
+                            <FiTrash2 /> Delete
                           </button>
-                        )}
-                        <button
-                          onClick={() => handleRemoveIp(bid)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-rose-700 text-xs hover:bg-rose-100"
-                        >
-                          <FiTrash2 /> Delete
-                        </button>
+                        </div>
                       </div>
                     </li>
                   );

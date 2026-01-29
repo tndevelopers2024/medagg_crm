@@ -12,21 +12,92 @@ import {
   FiUser,
   FiCalendar,
   FiMessageSquare,
+  FiTarget,
+  FiClock,
+  FiPieChart,
 } from "react-icons/fi";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
-import { fetchTodayLeads, fetchAllLeads, getAllUsers } from "../../../utils/api";
+import { fetchTodayLeads, fetchAllLeads, getAllUsers, fetchAdminDashboardStats, fetchAdminActivityStats } from "../../../utils/api";
 import { useSocket } from "../../../contexts/SocketProvider";
 import Loader from "../../../components/Loader";
 
 /* ---------------- helpers ---------------- */
+const cls = (...c) => c.filter(Boolean).join(" ");
+
 const isSameDay = (a, b) =>
   a &&
   b &&
   a.getFullYear() === b.getFullYear() &&
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
+
+/* -------------------- UI Components -------------------- */
+const Progress = ({ value = 0, max = 100, tone = "primary" }) => {
+  const pct = Math.max(0, Math.min(100, Math.round((value / max) * 100)));
+  const toneMap = {
+    primary: "from-[#8c3ed8] to-[#ff2e6e]",
+    green: "from-emerald-500 to-emerald-400",
+    orange: "from-orange-500 to-amber-400",
+    red: "from-rose-500 to-pink-500",
+    blue: "from-sky-500 to-indigo-500",
+  };
+  return (
+    <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
+      <div
+        className={cls(
+          "h-full bg-gradient-to-r rounded-full transition-all duration-500",
+          toneMap[tone] || toneMap.primary
+        )}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
+};
+
+const Pill = ({ children, tone = "gray" }) => {
+  const tones = {
+    gray: "bg-gray-100 text-gray-700",
+    green: "bg-emerald-50 text-emerald-700",
+    orange: "bg-orange-50 text-orange-700",
+    red: "bg-rose-50 text-rose-700",
+    purple: "bg-violet-50 text-violet-700",
+    blue: "bg-sky-50 text-sky-700",
+  };
+  return (
+    <span className={cls("px-2 py-0.5 rounded-full text-xs font-medium", tones[tone])}>
+      {children}
+    </span>
+  );
+};
+
+const MetricCard = ({ title, value, hint, footer, tone = "primary", max = 100, icon }) => {
+  const hintTone =
+    tone === "green" ? "green" : tone === "orange" ? "orange" : tone === "red" ? "red" : "gray";
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">{title}</p>
+        {icon ? <div className="text-gray-400">{icon}</div> : null}
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-gray-900">
+        {typeof value === "number" ? value : (value || "—")}
+      </div>
+      {hint ? (
+        <div className="mt-1">
+          <Pill tone={hintTone}>{hint}</Pill>
+        </div>
+      ) : null}
+      <div className="mt-3">
+        <Progress value={typeof value === "number" ? value : 0} max={max} tone={tone} />
+      </div>
+      {footer ? <div className="mt-2 text-xs text-gray-500">{footer}</div> : null}
+    </div>
+  );
+};
+
+
 
 const initialsOf = (name = "") =>
   name
@@ -350,6 +421,8 @@ export default function Dashboard() {
   const [allLeads, setAllLeads] = useState([]);
   const [callers, setCallers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({});
+  const [activityStats, setActivityStats] = useState({ callers: [], totals: {} });
   usePageTitle("Admin Dashboard", "Welcome back");
 
   const dedupe = useEventDeduper(8000);
@@ -370,15 +443,19 @@ export default function Dashboard() {
     (async () => {
       try {
         setLoading(true);
-        const [t, all, users] = await Promise.all([
+        const [t, all, users, dashStats, actStats] = await Promise.all([
           fetchTodayLeads(),
           fetchAllLeads(),
           getAllUsers({ role: "caller" }),
+          fetchAdminDashboardStats(),
+          fetchAdminActivityStats(),
         ]);
         if (!mounted) return;
         setTodayCount(t?.count || 0);
         setAllLeads(all?.leads || []);
         setCallers(users || []);
+        setStats(dashStats || {});
+        setActivityStats(actStats || { callers: [], totals: {} });
       } catch (e) {
         console.error(e);
       } finally {
@@ -564,6 +641,34 @@ export default function Dashboard() {
     [parsedLeads]
   );
 
+  // Bucket bars for lead distribution
+  const bucketList = useMemo(() => {
+    const buckets = stats.buckets || {};
+    const map = [
+      { label: "New Lead", key: "new lead", tone: "pink" },
+      { label: "Hot", key: "hot", tone: "orange" },
+      { label: "Hot-IP", key: "hot-ip", tone: "green" },
+      { label: "Prospective", key: "prospective", tone: "violet" },
+      { label: "Recapture", key: "recapture", tone: "sky" },
+      { label: "DNP", key: "dnp", tone: "gray" },
+    ];
+    return map.map((m) => ({ ...m, value: buckets[m.key] || 0 }));
+  }, [stats.buckets]);
+
+  const maxBucket = useMemo(
+    () => Math.max(...bucketList.map((b) => b.value), 1),
+    [bucketList]
+  );
+
+  const barTone = {
+    pink: "from-[#ff2e6e] to-[#ff5aa4]",
+    orange: "from-orange-500 to-amber-400",
+    green: "from-emerald-500 to-emerald-400",
+    violet: "from-[#8c3ed8] to-[#a86cf0]",
+    sky: "from-sky-500 to-indigo-500",
+    gray: "from-gray-300 to-gray-400",
+  };
+
   if (loading) return <Loader fullScreen text="Loading dashboard..." />;
 
   return (
@@ -582,83 +687,230 @@ export default function Dashboard() {
           <StatsCard title="Unassigned" value={String(pendingCount)} icon={<FiInfo />} />
         </section>
 
-        <div className="px-1 flex items-center justify-between">
-          <h3 className="font-semibold text-2xl">Recent Leads</h3>
-          <button onClick={() => navigate("/admin/leads")} className="text-sm button text-[#7d3bd6]">
-            View all
-          </button>
-        </div>
+        {/* Performance Metrics */}
+        <section className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-gray-900">Performance Metrics</h2>
+            <p className="text-xs text-gray-500">Aggregated across all callers</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+            <MetricCard
+              title="Today Tasks"
+              value={stats.tasksTodayCount || 0}
+              hint="All callers"
+              footer={`${stats.tasksTodayCount || 0} total`}
+              tone="primary"
+              max={500}
+              icon={<FiTarget />}
+            />
+            <MetricCard
+              title="Calls Made"
+              value={stats.callsMadeToday || 0}
+              hint="Organization-wide"
+              footer={`${stats.callsMadeToday || 0} calls`}
+              tone="blue"
+              max={200}
+              icon={<FiPhoneCall />}
+            />
+            <MetricCard
+              title="Call Duration"
+              value={stats.callDurationMin || 0}
+              hint="Total talk time"
+              footer={`${stats.callDurationMin || 0}min total`}
+              tone="green"
+              max={1000}
+              icon={<FiClock />}
+            />
+            <MetricCard
+              title="OPD Done Today"
+              value={stats.opdDoneToday || 0}
+              hint="Conversions"
+              footer={`${stats.opdDoneToday || 0} conversions`}
+              tone="green"
+              max={50}
+              icon={<FiCheckCircle />}
+            />
+            <MetricCard
+              title="IPD Done Today"
+              value={stats.ipdDoneToday || 0}
+              hint="Admissions"
+              footer={`${stats.ipdDoneToday || 0} admissions`}
+              tone="green"
+              max={20}
+              icon={<FiPieChart />}
+            />
+          </div>
+        </section>
 
-        {/* Recent Leads */}
-        <section className="rounded-2xl bg-white p-8 ring-1 ring-gray-200 shadow-sm overflow-hidden">
+        {/* Lead Distribution */}
+        <section className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Lead Distribution</h3>
+          <div className="space-y-4">
+            {bucketList.map((b) => {
+              const pct = Math.max(0, Math.min(100, Math.round((b.value / maxBucket) * 100)));
+              return (
+                <div key={b.key} className="grid grid-cols-5 items-center gap-3">
+                  <div className="col-span-2 md:col-span-1">
+                    <p className="text-sm text-gray-700">{b.label}</p>
+                  </div>
+                  <div className="col-span-3 md:col-span-3">
+                    <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
+                      <div
+                        className={cls(
+                          "h-full bg-gradient-to-r rounded-full transition-all",
+                          barTone[b.tone]
+                        )}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-medium text-gray-900">{b.value}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Activity & Performance Table */}
+        <section className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-gray-900">Activity & Performance</h3>
+            <p className="text-xs text-gray-500">Today</p>
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="text-gray-600">
+              <thead className="border-b border-gray-200">
                 <tr>
-                  <th className="text-left font-bold text-[16px] px-4 py-4">Lead</th>
-                  <th className="text-left font-bold text-[16px] px-4 py-4">Phone</th>
-                  <th className="text-left font-bold text-[16px] px-4 py-4">Source</th>
-                  <th className="text-left font-bold text-[16px] px-4 py-4">Status</th>
-                  <th className="text-left font-bold text-[16px] px-4 py-4">Assigned Caller</th>
-                  <th className="text-left font-bold text-[16px] px-4 py-4">Created</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Assignee</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Calls</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Duration</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Revenue</th>
                 </tr>
               </thead>
               <tbody>
-                {recent.map((l) => {
-                  const caller = l.assignedTo ? callerMap.get(l.assignedTo) : null;
-                  const count = l.assignedTo ? callerCounts.get(l.assignedTo) || 0 : 0;
-                  const init = caller ? initialsOf(caller.name) : null;
-
-                  return (
-                    <tr key={l.id} className="border-b last:border-b-0 border-[#ccc]">
-                      <td className="px-4 py-4 font-medium">{l.name}</td>
-                      <td className="px-4 py-4 text-gray-600">{formatPhoneNumber(l.phone)}</td>
-                      <td className="px-4 py-4">{l.source}</td>
-                      <td className="px-4 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${l.assignedTo
-                              ? "bg-violet-50 text-violet-700 ring-violet-200"
-                              : "bg-amber-50 text-amber-700 ring-amber-200"
-                            }`}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                          {l.assignedTo ? "Assigned" : "Unassigned"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        {caller ? (
-                          <div className="flex items-center gap-2">
-                            <span className="grid h-7 w-7 place-items-center rounded-full bg-orange-100 text-orange-700 text-[11px] font-bold">
-                              {init}
-                            </span>
-                            <div>
-                              <div className="text-sm font-medium">{caller.name}</div>
-                              <div className="flex items-center gap-1 text-[11px] text-emerald-600">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                {count} Leads
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-500">Unassigned</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-4 text-gray-600">{l.createdTime ? l.createdTime.toLocaleString() : "—"}</td>
-                    </tr>
-                  );
-                })}
-                {!loading && recent.length === 0 && (
-                  <tr>
-                    <td className="px-4 py-6 text-center text-gray-500" colSpan={6}>
-                      No leads yet.
+                {activityStats.callers.map((caller) => (
+                  <tr
+                    key={caller.id}
+                    onClick={() => navigate(`/admin/reports/${caller.id}`)}
+                    className="border-b border-gray-100 hover:bg-violet-50 transition cursor-pointer"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-bold">
+                          {initialsOf(caller.name)}
+                        </div>
+                        <span className="font-medium text-gray-900">{caller.name}</span>
+                      </div>
                     </td>
+                    <td className="px-4 py-3 text-gray-700">{caller.calls}</td>
+                    <td className="px-4 py-3 text-gray-700">{caller.duration}</td>
+                    <td className="px-4 py-3 text-gray-700">₹{caller.revenue}</td>
+                  </tr>
+                ))}
+                {activityStats.totals && (
+                  <tr className="border-t-2 border-gray-300 font-bold bg-gray-50">
+                    <td className="px-4 py-3 text-gray-900">Total</td>
+                    <td className="px-4 py-3 text-gray-900">{activityStats.totals.calls || 0}</td>
+                    <td className="px-4 py-3 text-gray-900">{activityStats.totals.duration || "0s"}</td>
+                    <td className="px-4 py-3 text-gray-900">₹{activityStats.totals.revenue || 0}</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
         </section>
+
+        {/* Follow Ups Table */}
+        <section className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-gray-900">Follow Ups</h3>
+            <p className="text-xs text-gray-500">Today</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-200">
+                <tr>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Assignee</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Upcoming</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Late</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Done</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Cancel</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activityStats.callers.map((caller) => (
+                  <tr
+                    key={caller.id}
+                    onClick={() => navigate(`/admin/reports/${caller.id}`)}
+                    className="border-b border-gray-100 hover:bg-violet-50 transition cursor-pointer"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-xs font-bold">
+                          {initialsOf(caller.name)}
+                        </div>
+                        <span className="font-medium text-gray-900">{caller.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{caller.followUps?.upcoming || 0}</td>
+                    <td className="px-4 py-3 text-red-600 font-medium">{caller.followUps?.late || 0}</td>
+                    <td className="px-4 py-3 text-green-600 font-medium">{caller.followUps?.done || 0}</td>
+                    <td className="px-4 py-3 text-gray-700">{caller.followUps?.cancel || 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Lead by Stages Table */}
+        <section className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-gray-900">Lead by stages</h3>
+            <button className="text-xs text-violet-600 hover:text-violet-700 font-medium">Manage</button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-200">
+                <tr>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Assignee</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Fresh</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Active</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Won</th>
+                  <th className="text-left font-semibold text-gray-700 px-4 py-3">Lost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activityStats.callers.map((caller) => (
+                  <tr
+                    key={caller.id}
+                    onClick={() => navigate(`/admin/reports/${caller.id}`)}
+                    className="border-b border-gray-100 hover:bg-violet-50 transition cursor-pointer"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
+                          {initialsOf(caller.name)}
+                        </div>
+                        <span className="font-medium text-gray-900">{caller.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{caller.leadsByStage?.fresh || 0}</td>
+                    <td className="px-4 py-3 text-gray-700">{caller.leadsByStage?.active || 0}</td>
+                    <td className="px-4 py-3 text-green-600 font-medium">{caller.leadsByStage?.won || 0}</td>
+                    <td className="px-4 py-3 text-red-600 font-medium">{caller.leadsByStage?.lost || 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
       </div>
+
+
 
       {/* Toasts */}
       <ToastStack toasts={toasts} remove={remove} />
