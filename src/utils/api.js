@@ -292,11 +292,7 @@ export const fetchLeadsByDate = async (date) => {
   };
 };
 
-// Generate fake leads without saving (admin)
-export const generateTestLeads = async (count = 5) => {
-  const { data } = await api.get("/leads/test", { params: { count } });
-  return data?.data ?? [];
-};
+
 
 // Assign leads to a caller (admin)
 export const assignLeadsToCaller = async (leadIds = [], callerId) => {
@@ -820,6 +816,24 @@ export const deleteLeadStage = async (id) => {
 export const reorderLeadStages = async (stageOrders) => {
   const { data } = await api.patch("/lead-stages/reorder", { stageOrders });
   return data; // { success, data: [...] }
+};
+
+/* -------------------------------------------
+ * LEAD DOCUMENTS
+ * ----------------------------------------- */
+export const uploadLeadDocument = async (leadId, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  // Using generic /leads route which supports both admin & caller roles
+  const { data } = await api.post(`/leads/${leadId}/documents`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data; // { success, message, document }
+};
+
+export const deleteLeadDocument = async (leadId, docId) => {
+  const { data } = await api.delete(`/leads/${leadId}/documents/${docId}`);
+  return data; // { success, message }
 };
 
 export const apiClient = api;

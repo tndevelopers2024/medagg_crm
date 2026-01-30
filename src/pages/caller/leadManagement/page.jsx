@@ -17,9 +17,9 @@ import {
   FiShare2,
   FiList,
   FiActivity,
-  FiUser,
   FiMic,
   FiStar,
+  FiPaperclip,
 } from "react-icons/fi";
 import {
   // removed: getMe, fetchAssignedLeads, fetchAllLeads
@@ -41,6 +41,8 @@ import {
   fetchLeadStages,
   fetchCampaigns,
   fetchLeadCallLogs,
+  uploadLeadDocument,
+  deleteLeadDocument,
   BASE_URL,
 } from "../../../utils/api";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -1187,6 +1189,87 @@ export default function LeadManagement() {
                 <div className="text-xs text-amber-600 mb-1">Duration</div>
                 <div className="text-sm font-bold text-amber-700 flex items-center justify-center h-7">{callStats.durationStr || "0s"}</div>
               </div>
+            </div>
+          </div>
+        </section>
+
+
+        {/* Documents Section */}
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold text-gray-900">
+                Documents
+              </h3>
+              <label className="cursor-pointer inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                <FiPaperclip />
+                <span>Upload</span>
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="application/pdf,image/*,.doc,.docx"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 10 * 1024 * 1024) {
+                      toast.error("File size must be < 10MB");
+                      return;
+                    }
+                    const toastId = toast.loading("Uploading...");
+                    try {
+                      const res = await uploadLeadDocument(id, file);
+                      toast.success("Document uploaded!");
+                      // Refresh lead data securely
+                      loadLeadData();
+                    } catch (err) {
+                      console.error(err);
+                      toast.error(err?.response?.data?.error || "Upload failed");
+                    } finally {
+                      toast.dismiss(toastId);
+                      // Reset input
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            <div>
+              {(leadData.documents && leadData.documents.length > 0) ? (
+                <ul className="space-y-2">
+                  {leadData.documents.map((doc) => (
+                    <li key={doc._id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 bg-gray-50/50 hover:bg-gray-50">
+                      <a href={`${import.meta.env.VITE_API_BASE_URL || "/api/v1"}/../uploads/lead_documents/${doc.path}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 truncate text-sm text-gray-700 hover:text-violet-600 hover:underline">
+                        <span className="font-medium truncate max-w-[200px]">{doc.name}</span>
+                        <span className="text-xs text-gray-400">({Math.round(doc.size / 1024)} KB)</span>
+                      </a>
+                      <button
+                        onClick={async () => {
+                          if (!window.confirm("Delete this document?")) return;
+                          try {
+                            await deleteLeadDocument(id, doc._id);
+                            toast.success("Deleted");
+                            setLeadData(prev => ({
+                              ...prev,
+                              documents: prev.documents.filter(d => d._id !== doc._id)
+                            }));
+                          } catch (err) {
+                            console.error(err);
+                            toast.error("Failed to delete");
+                          }
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors"
+                        title="Delete"
+                      >
+                        <FiTrash2 className="w-4 h-4" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-center py-6 text-sm text-gray-400 border border-dashed border-gray-200 rounded-xl">
+                  No documents attached
+                </div>
+              )}
             </div>
           </div>
         </section>
