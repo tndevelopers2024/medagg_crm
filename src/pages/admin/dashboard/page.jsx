@@ -296,7 +296,7 @@ export default function Dashboard() {
             }
           }}
         />
-
+        <div className="grid gap-6">
         {/* City & Doctor Summary */}
         <CityDoctorTable data={data.cityDoctorSummary} />
 
@@ -311,6 +311,7 @@ export default function Dashboard() {
 
         {/* BD Performance Summary */}
         <BdPerformanceSummary data={data.bdPerformanceSummary} />
+        </div>
       </div>
     </>
   );
