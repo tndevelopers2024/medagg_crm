@@ -1,15 +1,27 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
-    FiSearch, FiPhone, FiMessageCircle, FiMapPin, FiCalendar, FiClock,
-    FiUser, FiCheckCircle, FiChevronRight, FiCopy, FiMessageSquare, FiPlusSquare,
-    FiActivity
+    Input, Card, Select, Rate, Tag, Timeline, Empty, Button, Space, Spin, Avatar,
+    Typography, Descriptions, Tooltip, message, Divider, Modal, DatePicker, TimePicker
+} from "antd";
+import dayjs from "dayjs";
+import {
+    FiPhone, FiMapPin, FiCalendar, FiClock,
+    FiUser, FiChevronRight, FiCopy, FiActivity,
+    FiBell, FiPhoneCall
 } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useAuth } from "../../../contexts/AuthContext";
-import { fetchAllLeads, fetchAssignedLeads, fetchLeadStages, updateLeadStatus, fetchLeadActivities, updateLeadDetails } from "../../../utils/api";
-import { toast } from "react-hot-toast";
+import {
+    fetchAllLeads, fetchAssignedLeads, fetchLeadStages,
+    updateLeadStatus, fetchLeadActivities, updateLeadDetails,
+    requestMobileCall, createAlarm, deferLeadToNextDay
+} from "../../../utils/api";
+import WhatsAppModal from "../../caller/leadManagement/components/WhatsAppModal";
+import AlarmModal from "../../../components/AlarmModal";
+
+const { Text, Title } = Typography;
 
 // --- Helpers ---
 const renderField = (lead, keys) => {
@@ -29,13 +41,21 @@ const getLeadPhone = (lead) => {
     return lead.phone || renderField(lead, ['phone_number', 'phone', 'mobile', 'contact']) || "—";
 };
 
-// Helper to format status labels (remove underscores, capitalize)
+const getLeadEmail = (lead) => {
+    return lead.email || renderField(lead, ['email', 'email_address', 'mail']) || "";
+};
+
 const formatStatus = (s) => {
     if (!s) return "";
     return String(s).replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
 };
 
-// --- Components ---
+// Date helpers for defer/call-later
+const pad2 = (n) => String(n).padStart(2, "0");
+const toYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const tomorrowYMD = () => toYMD(new Date(Date.now() + 24 * 60 * 60 * 1000));
+
+// --- Sub-components ---
 
 const LeadListItem = ({ lead, active, onClick }) => {
     const name = getLeadName(lead);
@@ -48,66 +68,27 @@ const LeadListItem = ({ lead, active, onClick }) => {
         >
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg text-lg font-bold text-white ${active ? 'bg-[#3b0d66]' : 'bg-gray-700'}`}>
+                    <Avatar
+                        size={40}
+                        style={{ backgroundColor: active ? '#3b0d66' : '#374151', fontWeight: 700 }}
+                    >
                         {name.charAt(0).toUpperCase()}
-                    </div>
+                    </Avatar>
                     <div>
-                        <h4 className="font-semibold text-gray-900">{name}</h4>
-                        <p className="text-xs text-gray-500">Phone: <span className="font-medium text-gray-700">{getLeadPhone(lead)}</span></p>
+                        <Text strong>{name}</Text>
+                        <div>
+                            <Text type="secondary" className="text-xs">
+                                Phone: <Text className="text-xs" strong>{getLeadPhone(lead)}</Text>
+                            </Text>
+                        </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+                <Space size={4}>
+                    <Tag color="purple" style={{ fontSize: 10, margin: 0 }}>
                         {status.substring(0, 2).toUpperCase()}
-                    </span>
+                    </Tag>
                     <FiChevronRight className="text-gray-400" />
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const DetailRow = ({ label, value, copyable, icon }) => (
-    <div className="space-y-1">
-        <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
-            {icon} {label}
-        </label>
-        <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-gray-900">{value}</p>
-            {copyable && (
-                <button
-                    onClick={() => {
-                        navigator.clipboard.writeText(value);
-                        toast.success("Copied!");
-                    }}
-                    className="text-gray-400 hover:text-gray-600"
-                >
-                    <FiCopy size={12} />
-                </button>
-            )}
-        </div>
-    </div>
-);
-
-const ActivityItem = ({ act }) => {
-    const date = new Date(act.createdAt || Date.now());
-    return (
-        <div className="flex gap-3 pb-6 relative">
-            <div className="flex flex-col items-center">
-                <div className="h-2 w-2 rounded-full bg-gray-300 ring-4 ring-white" />
-                <div className="w-px bg-gray-200 flex-1 my-1" />
-            </div>
-            <div className="flex-1 -mt-1.5">
-                <p className="text-sm text-gray-800">
-                    <span className="font-semibold">{act.action === "lead_update" ? "Updated" : act.action.replace(/_/g, " ")}: </span>
-                    {act.description}
-                </p>
-                <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
-                    <FiClock size={10} />
-                    <span>{date.toLocaleDateString()} at {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    <span>•</span>
-                    <span>{act.actor?.name || "System"}</span>
-                </div>
+                </Space>
             </div>
         </div>
     );
@@ -126,6 +107,15 @@ export default function SearchLeadsPage() {
 
     const [activities, setActivities] = useState([]);
     const [activitiesLoading, setActivitiesLoading] = useState(false);
+
+    // Action modals state
+    const [whatsAppOpen, setWhatsAppOpen] = useState(false);
+    const [alarmOpen, setAlarmOpen] = useState(false);
+    const [deferOpen, setDeferOpen] = useState(false);
+    const [laterDate, setLaterDate] = useState(tomorrowYMD());
+    const [laterTime, setLaterTime] = useState("10:00");
+    const [deferring, setDeferring] = useState(false);
+    const [requestingCall, setRequestingCall] = useState(false);
 
     // Load stages
     useEffect(() => {
@@ -164,29 +154,40 @@ export default function SearchLeadsPage() {
     // Debounced Search
     useEffect(() => {
         const timer = setTimeout(() => {
-            fetchLeads(query);
+            fetchLeadsData(query);
         }, 500);
         return () => clearTimeout(timer);
     }, [query, isCaller]);
 
-    const fetchLeads = async (q) => {
+    const fetchLeadsData = async (q) => {
         setLoading(true);
         try {
-            // Fetch based on role
-            const res = isCaller ? await fetchAssignedLeads() : await fetchAllLeads();
-            let all = res.leads || [];
+            let all = [];
 
-            if (q) {
-                const lower = q.toLowerCase();
-                all = all.filter(l => {
-                    const name = getLeadName(l).toLowerCase();
-                    const phone = getLeadPhone(l);
-                    return name.includes(lower) || phone.includes(lower);
-                });
+            if (isCaller) {
+                const res = await fetchAssignedLeads();
+                all = res.leads || [];
+
+                if (q) {
+                    const lower = q.toLowerCase();
+                    all = all.filter(l => {
+                        const name = getLeadName(l).toLowerCase();
+                        const phone = getLeadPhone(l);
+                        const email = getLeadEmail(l).toLowerCase();
+                        return name.includes(lower) || phone.includes(lower) || email.includes(lower);
+                    });
+                }
+            } else {
+                const params = { limit: 50 };
+                if (q) params.q = q;
+                const res = await fetchAllLeads(params);
+                all = res.leads || [];
             }
-            setLeads(all.slice(0, 50)); // Limit result
+
+            setLeads(all);
         } catch (err) {
             console.error(err);
+            message.error("Search failed");
         } finally {
             setLoading(false);
         }
@@ -197,8 +198,7 @@ export default function SearchLeadsPage() {
         setChangingStatus(true);
         try {
             await updateLeadStatus(selectedLead.id || selectedLead._id, { status: newStage });
-            toast.success("Stage updated successfully");
-            // Update local state
+            message.success("Stage updated successfully");
             setSelectedLead({ ...selectedLead, status: newStage });
             setLeads(leads.map(l =>
                 (l.id || l._id) === (selectedLead.id || selectedLead._id)
@@ -206,7 +206,7 @@ export default function SearchLeadsPage() {
                     : l
             ));
         } catch (err) {
-            toast.error("Failed to update stage");
+            message.error("Failed to update stage");
         } finally {
             setChangingStatus(false);
         }
@@ -217,206 +217,388 @@ export default function SearchLeadsPage() {
         const id = selectedLead.id || selectedLead._id;
         const currentFieldData = selectedLead.fieldData || [];
 
-        // Optimistic update
         const updatedFieldData = currentFieldData.filter(f => f.name !== "rating");
         updatedFieldData.push({ name: "rating", values: [String(val)] });
 
         setSelectedLead({ ...selectedLead, fieldData: updatedFieldData });
 
         try {
-            // We use updateLeadDetails to patch the fieldData
-            // Just sending the delta fieldData updates is enough usually if backend supports it,
-            // but updateLeadDetails typically expects a map of fieldName->value for 'fieldDataUpdates'
             const updates = { rating: String(val) };
             await updateLeadDetails(id, { fieldDataUpdates: updates });
-            toast.success(`Rated ${val} stars`);
+            message.success(`Rated ${val} stars`);
         } catch (err) {
             console.error(err);
-            toast.error("Failed to save rating");
+            message.error("Failed to save rating");
+        }
+    };
+
+    // --- Action handlers ---
+    const leadId = selectedLead?.id || selectedLead?._id;
+
+    const handleRequestCall = async () => {
+        if (!selectedLead) return;
+        const phone = getLeadPhone(selectedLead);
+        if (!phone || phone === "—") {
+            message.warning("No phone number available");
+            return;
+        }
+        setRequestingCall(true);
+        try {
+            await requestMobileCall(leadId, phone);
+            message.success("Call request sent");
+        } catch (err) {
+            message.error("Failed to request call");
+        } finally {
+            setRequestingCall(false);
+        }
+    };
+
+    const handleSetAlarm = async (alarmLeadId, alarmTime, notes) => {
+        await createAlarm(alarmLeadId, alarmTime, notes);
+    };
+
+    const handleDeferSave = async () => {
+        if (!laterDate) {
+            message.warning("Please select a date");
+            return;
+        }
+        setDeferring(true);
+        try {
+            await deferLeadToNextDay(leadId, {
+                followUpDate: laterDate,
+                followUpTime: laterTime || "10:00",
+            });
+            message.success("Follow-up scheduled");
+            setSelectedLead({ ...selectedLead, followUpAt: `${laterDate}T${laterTime || "10:00"}:00` });
+            setDeferOpen(false);
+        } catch (err) {
+            message.error("Failed to schedule follow-up");
+        } finally {
+            setDeferring(false);
         }
     };
 
     const currentRating = parseInt(renderField(selectedLead || {}, "rating") || "0", 10);
+
+    // Build leadData map for WhatsApp template interpolation
+    const leadDataMap = selectedLead ? (() => {
+        const map = {
+            name: getLeadName(selectedLead),
+            phone: getLeadPhone(selectedLead),
+            email: getLeadEmail(selectedLead),
+            source: selectedLead.source || "",
+        };
+        (selectedLead.fieldData || []).forEach(f => {
+            const key = (f.name || "").toLowerCase().replace(/\s+/g, "_");
+            if (f.values?.[0]) map[key] = f.values[0];
+        });
+        return map;
+    })() : {};
+
+    // Quick pick dates for defer modal
+    const deferQuickPicks = [
+        { label: "Tomorrow", date: tomorrowYMD() },
+        { label: "In 3 Days", date: toYMD(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)) },
+        { label: "Next Week", date: toYMD(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)) },
+    ];
 
     return (
         <div className="flex h-[calc(100vh-4rem)] flex-col md:flex-row overflow-hidden bg-white">
             {/* LEFT SIDEBAR: Search & List */}
             <div className="w-full flex-shrink-0 border-r border-gray-200 bg-white md:w-96 flex flex-col">
                 <div className="p-4 border-b border-gray-100">
-                    <h2 className="mb-3 text-sm font-semibold text-gray-500">Search leads</h2>
-                    <div className="relative">
-                        <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search by name, phone..."
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-4 text-sm outline-none focus:border-violet-300 focus:bg-white focus:ring-2 focus:ring-violet-100"
-                        />
-                        {query && (
-                            <button onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500">
-                                &times;
-                            </button>
-                        )}
-                    </div>
+                    <Text type="secondary" strong className="text-sm mb-3 block">Search leads</Text>
+                    <Input.Search
+                        placeholder="Search by name, phone, email..."
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        allowClear
+                        onSearch={(val) => setQuery(val)}
+                    />
 
-                    <div className="mt-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-                        {['Auto', 'Phone', 'Text'].map(t => (
-                            <button key={t} className="flex-shrink-0 rounded-full border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50">
-                                {t}
-                            </button>
-                        ))}
+                    <div className="mt-3">
+                        <Text type="secondary" className="text-xs">
+                            {loading ? "Searching..." : <>{leads.length} matching leads for <Text strong className="text-xs">{query || "all"}</Text></>}
+                        </Text>
                     </div>
-
-                    <p className="mt-3 text-xs font-medium text-gray-500">
-                        {loading ? "Searching..." : <>{leads.length} matching leads for <span className="font-bold text-gray-900">{query || "all"}</span></>}
-                    </p>
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
-                    {leads.map(lead => (
-                        <LeadListItem
-                            key={lead.id}
-                            lead={lead}
-                            active={selectedLead?.id === lead.id}
-                            onClick={setSelectedLead}
-                        />
-                    ))}
-                    {!loading && leads.length === 0 && (
-                        <div className="p-8 text-center text-sm text-gray-500">No leads found.</div>
+                    {loading && leads.length === 0 ? (
+                        <div className="flex justify-center py-12">
+                            <Spin />
+                        </div>
+                    ) : leads.length > 0 ? (
+                        leads.map(lead => (
+                            <LeadListItem
+                                key={lead.id || lead._id}
+                                lead={lead}
+                                active={(selectedLead?.id || selectedLead?._id) === (lead.id || lead._id)}
+                                onClick={setSelectedLead}
+                            />
+                        ))
+                    ) : (
+                        <div className="p-8">
+                            <Empty description="No leads found" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                        </div>
                     )}
                 </div>
             </div>
 
-            {/* RIGHT MAIN: Detail Details */}
+            {/* RIGHT MAIN: Lead Details */}
             <div className="flex-1 overflow-y-auto bg-gray-50 p-4 md:p-8">
                 {selectedLead ? (
-                    <div className="mx-auto max-w-4xl rounded-2xl bg-white shadow-sm ring-1 ring-gray-900/5">
+                    <Card className="mx-auto max-w-4xl" styles={{ body: { padding: 0 } }}>
                         {/* Header */}
                         <div className="flex items-start justify-between border-b border-gray-100 p-6">
                             <div>
-                                <h1 className="text-2xl font-bold text-gray-900">{getLeadName(selectedLead)}</h1>
-                                <div className="mt-2 flex items-center gap-3">
-                                    <select
+                                <Title level={4} style={{ marginBottom: 8 }}>{getLeadName(selectedLead)}</Title>
+                                <Space size={12} wrap>
+                                    <Select
                                         value={selectedLead.status || "new"}
-                                        onChange={(e) => handleStageChange(e.target.value)}
+                                        onChange={handleStageChange}
+                                        loading={changingStatus}
                                         disabled={changingStatus}
-                                        className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 uppercase tracking-wide border-0 outline-none cursor-pointer hover:bg-blue-100 disabled:opacity-50"
-                                    >
-                                        {leadStages.map((stage) => (
-                                            <option key={stage.stageName} value={stage.stageName}>
-                                                {formatStatus(stage.displayLabel || stage.stageName)}
-                                            </option>
-                                        ))}
-                                    </select>
-
-                                    {/* Rating UI */}
-                                    <div className="flex gap-0.5 text-gray-300 ml-2">
-                                        {[1, 2, 3, 4, 5].map(i => (
-                                            <button
-                                                key={i}
-                                                onClick={() => handleRating(i)}
-                                                className={`transition-transform hover:scale-110 ${i <= currentRating ? "text-yellow-400" : "text-gray-200 hover:text-yellow-200"}`}
-                                            >
-                                                <FiActivity className={i <= currentRating ? "fill-current" : ""} size={16}
-                                                    style={{
-                                                        fill: i <= currentRating ? "currentColor" : "none",
-                                                        stroke: "currentColor"
-                                                    }}
-                                                // Note: FiActivity is not a Star. Swapping to specific star SVG or check imports.
-                                                // The user used <FiActivity> previously as placeholder. 
-                                                // I should strictly use a Star icon. FiStar is best.
-                                                />
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
+                                        size="small"
+                                        style={{ minWidth: 140 }}
+                                        options={leadStages.map(stage => ({
+                                            value: stage.stageName,
+                                            label: formatStatus(stage.displayLabel || stage.stageName),
+                                        }))}
+                                    />
+                                    <Rate
+                                        value={currentRating}
+                                        onChange={handleRating}
+                                        style={{ fontSize: 16 }}
+                                    />
+                                </Space>
                             </div>
-                            <div className="flex gap-2">
-                                <Link
-                                    to={`/${isCaller ? 'caller' : 'admin'}/leads/${selectedLead.id || selectedLead._id || selectedLead.leadId}`}
-                                    className="hidden items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-50 md:inline-flex"
-                                >
-                                    View Details <FiChevronRight />
+                            <Space>
+                                <Link to={`/${isCaller ? 'caller' : 'admin'}/leads/${selectedLead.id || selectedLead._id || selectedLead.leadId}`}>
+                                    <Button size="small">
+                                        View Details <FiChevronRight />
+                                    </Button>
                                 </Link>
-                                <button className="rounded-full p-2 text-gray-400 hover:bg-gray-100"><FiCopy size={20} /></button>
-                            </div>
+                                <Tooltip title="Copy lead ID">
+                                    <Button
+                                        type="text"
+                                        icon={<FiCopy />}
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(selectedLead.id || selectedLead._id || "");
+                                            message.success("Lead ID copied");
+                                        }}
+                                    />
+                                </Tooltip>
+                            </Space>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
+                            <Space size={8} wrap>
+                                <Button
+                                    icon={<FiPhoneCall />}
+                                    onClick={handleRequestCall}
+                                    loading={requestingCall}
+                                >
+                                    Request Call
+                                </Button>
+                                <Button
+                                    icon={<FaWhatsapp />}
+                                    onClick={() => setWhatsAppOpen(true)}
+                                    style={{ color: "#16a34a", borderColor: "#16a34a" }}
+                                >
+                                    WhatsApp
+                                </Button>
+                                <Button
+                                    icon={<FiBell />}
+                                    onClick={() => setAlarmOpen(true)}
+                                >
+                                    Set Alarm
+                                </Button>
+                                <Button
+                                    icon={<FiCalendar />}
+                                    onClick={() => {
+                                        setLaterDate(tomorrowYMD());
+                                        setLaterTime("10:00");
+                                        setDeferOpen(true);
+                                    }}
+                                >
+                                    Call Later
+                                </Button>
+                            </Space>
                         </div>
 
                         {/* Details Grid */}
-                        <div className="grid grid-cols-1 gap-8 p-6 md:grid-cols-2">
-                            <DetailRow
-                                icon={<FiPhone className="text-gray-400" />}
-                                label="Phone"
-                                value={getLeadPhone(selectedLead)}
-                                copyable
-                            />
-                            <DetailRow
-                                icon={<FiMapPin className="text-gray-400" />}
-                                label="Lead Source"
-                                value={selectedLead.source || renderField(selectedLead, "source")}
-                            />
-                            <DetailRow
-                                icon={<FiUser className="text-gray-400" />}
-                                label="Department"
-                                value={renderField(selectedLead, "department") || "—"}
-                            />
-                            {/* Assigned Caller Row */}
-                            <DetailRow
-                                icon={<FiUser className="text-gray-400" />}
-                                label="Assigned To"
-                                value={selectedLead.assignedTo?.name || selectedLead.assignedTo?.email || "Unassigned"}
-                            />
-                            <DetailRow
-                                icon={<FiActivity className="text-gray-400" />}
-                                label="Procedure"
-                                value={renderField(selectedLead, "procedure") || "—"}
-                            />
-                            <DetailRow
-                                icon={<FiCalendar className="text-gray-400" />}
-                                label="Call Later Date"
-                                value={selectedLead.followUpAt ? new Date(selectedLead.followUpAt).toLocaleDateString() : "—"}
-                            />
-                            <DetailRow
-                                icon={<FiMapPin className="text-gray-400" />}
-                                label="Location"
-                                value={renderField(selectedLead, "location") || "—"}
-                            />
+                        <div className="p-6">
+                            <Descriptions column={{ xs: 1, md: 2 }} size="small" colon={false}>
+                                <Descriptions.Item label={<Space size={4}><FiPhone className="text-gray-400" /> Phone</Space>}>
+                                    <Space>
+                                        <Text>{getLeadPhone(selectedLead)}</Text>
+                                        <Tooltip title="Copy phone">
+                                            <Button
+                                                type="text"
+                                                size="small"
+                                                icon={<FiCopy size={12} />}
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(getLeadPhone(selectedLead));
+                                                    message.success("Copied!");
+                                                }}
+                                            />
+                                        </Tooltip>
+                                    </Space>
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<Space size={4}><FiMapPin className="text-gray-400" /> Lead Source</Space>}>
+                                    {selectedLead.source || renderField(selectedLead, "source") || "—"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<Space size={4}><FiUser className="text-gray-400" /> Department</Space>}>
+                                    {renderField(selectedLead, "department") || "—"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<Space size={4}><FiUser className="text-gray-400" /> Assigned To</Space>}>
+                                    {selectedLead.assignedTo?.name || selectedLead.assignedTo?.email || "Unassigned"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<Space size={4}><FiActivity className="text-gray-400" /> Procedure</Space>}>
+                                    {renderField(selectedLead, "procedure") || "—"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<Space size={4}><FiCalendar className="text-gray-400" /> Call Later Date</Space>}>
+                                    {selectedLead.followUpAt ? new Date(selectedLead.followUpAt).toLocaleDateString() : "—"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label={<Space size={4}><FiMapPin className="text-gray-400" /> Location</Space>}>
+                                    {renderField(selectedLead, "location") || "—"}
+                                </Descriptions.Item>
+                            </Descriptions>
                         </div>
 
                         {/* Activity History */}
                         <div className="border-t border-gray-100">
-                            <div className="flex border-b border-gray-100 px-6">
-                                <button className="border-b-2 border-[#3b0d66] px-4 py-3 text-sm font-semibold text-[#3b0d66]">Activity History</button>
+                            <div className="px-6 pt-4 pb-2">
+                                <Text strong style={{ color: "#3b0d66" }}>Activity History</Text>
                             </div>
+                            <Divider style={{ margin: 0 }} />
                             <div className="p-6 max-h-96 overflow-y-auto">
                                 {activitiesLoading ? (
-                                    <div className="text-center py-8 text-gray-400 text-sm">Loading activities...</div>
+                                    <div className="flex justify-center py-8">
+                                        <Spin size="small" />
+                                    </div>
                                 ) : activities.length > 0 ? (
-                                    <div className="pl-2">
-                                        {activities.map((act) => (
-                                            <ActivityItem key={act._id || act.id} act={act} />
-                                        ))}
-                                    </div>
+                                    <Timeline
+                                        items={activities.map(act => {
+                                            const date = new Date(act.createdAt || Date.now());
+                                            return {
+                                                key: act._id || act.id,
+                                                children: (
+                                                    <div>
+                                                        <Text className="text-sm">
+                                                            <Text strong>
+                                                                {act.action === "lead_update" ? "Updated" : act.action.replace(/_/g, " ")}:
+                                                            </Text>{" "}
+                                                            {act.description}
+                                                        </Text>
+                                                        <div className="mt-1">
+                                                            <Text type="secondary" className="text-xs">
+                                                                <FiClock size={10} className="inline mr-1" />
+                                                                {date.toLocaleDateString()} at {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                {" • "}
+                                                                {act.actor?.name || "System"}
+                                                            </Text>
+                                                        </div>
+                                                    </div>
+                                                ),
+                                            };
+                                        })}
+                                    />
                                 ) : (
-                                    <div className="text-center py-12 text-sm text-gray-500">
-                                        No history available for this lead yet.
-                                    </div>
+                                    <Empty
+                                        description="No history available for this lead yet"
+                                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                    />
                                 )}
                             </div>
                         </div>
-
-                    </div>
+                    </Card>
                 ) : (
                     <div className="flex h-full flex-col items-center justify-center text-center">
-                        <div className="mb-4 rounded-full bg-violet-50 p-6">
-                            <FiSearch className="h-8 w-8 text-violet-300" />
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-900">Select a lead to view details</h3>
-                        <p className="mt-1 text-sm text-gray-500">Use the search bar on the left to find leads.</p>
+                        <Empty
+                            description={
+                                <div>
+                                    <Title level={5} style={{ marginBottom: 4 }}>Select a lead to view details</Title>
+                                    <Text type="secondary">Use the search bar on the left to find leads.</Text>
+                                </div>
+                            }
+                        />
                     </div>
                 )}
             </div>
+
+            {/* --- Action Modals --- */}
+            {selectedLead && (
+                <>
+                    <WhatsAppModal
+                        open={whatsAppOpen}
+                        onClose={() => setWhatsAppOpen(false)}
+                        phoneNumber={getLeadPhone(selectedLead)}
+                        leadName={getLeadName(selectedLead)}
+                        leadData={leadDataMap}
+                    />
+
+                    <AlarmModal
+                        open={alarmOpen}
+                        onClose={() => setAlarmOpen(false)}
+                        onSetAlarm={handleSetAlarm}
+                        leadId={leadId}
+                    />
+
+                    {/* Call Later / Defer Modal */}
+                    <Modal
+                        open={deferOpen}
+                        onCancel={() => setDeferOpen(false)}
+                        title="Schedule Follow-up"
+                        footer={[
+                            <Button key="cancel" onClick={() => setDeferOpen(false)}>Cancel</Button>,
+                            <Button key="save" type="primary" loading={deferring} onClick={handleDeferSave}>Save</Button>,
+                        ]}
+                        destroyOnClose
+                    >
+                        <p className="text-sm text-gray-600 mb-4">
+                            Pick a <span className="font-medium">date</span> and <span className="font-medium">time</span>.
+                        </p>
+
+                        <div className="flex items-center gap-2 mb-4">
+                            {deferQuickPicks.map(qp => (
+                                <Button
+                                    key={qp.label}
+                                    type={laterDate === qp.date ? "primary" : "default"}
+                                    size="small"
+                                    ghost={laterDate === qp.date}
+                                    onClick={() => setLaterDate(qp.date)}
+                                >
+                                    {qp.label}
+                                </Button>
+                            ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-600 block">Date</label>
+                                <DatePicker
+                                    value={laterDate ? dayjs(laterDate, "YYYY-MM-DD") : null}
+                                    onChange={(d) => setLaterDate(d ? d.format("YYYY-MM-DD") : "")}
+                                    className="w-full"
+                                    format="YYYY-MM-DD"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-600 block">Time</label>
+                                <TimePicker
+                                    value={laterTime ? dayjs(laterTime, "HH:mm") : null}
+                                    onChange={(t) => setLaterTime(t ? t.format("HH:mm") : "")}
+                                    className="w-full"
+                                    format="HH:mm"
+                                />
+                            </div>
+                        </div>
+                    </Modal>
+                </>
+            )}
         </div>
     );
 }

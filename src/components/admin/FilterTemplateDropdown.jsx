@@ -4,13 +4,15 @@ import {
     BookmarkIcon,
     ChevronDownIcon,
     StarIcon,
-    TrashIcon
+    TrashIcon,
+    PencilIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 
 export default function FilterTemplateDropdown({
     templates,
     onSelect,
+    onEdit,
     onDelete,
     onSetDefault,
     currentTemplateId
@@ -78,6 +80,16 @@ export default function FilterTemplateDropdown({
                                                 ) : (
                                                     <StarIcon className="w-4 h-4 text-gray-400" />
                                                 )}
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onEdit(template);
+                                                }}
+                                                className="p-1 hover:bg-blue-50 rounded text-gray-400 hover:text-blue-600"
+                                                title="Edit template"
+                                            >
+                                                <PencilIcon className="w-4 h-4" />
                                             </button>
                                             <button
                                                 onClick={(e) => {

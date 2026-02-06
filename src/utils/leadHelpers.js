@@ -31,8 +31,18 @@ export const parseLead = (lead, campaignMap = new Map()) => {
         readField(lead.fieldData, ["lead_status", "status", "stage", "type"]) ||
         "—";
 
-    const opdStatus = readField(lead.fieldData, ["opd_status", "opd"]) || "—";
-    const ipdStatus = readField(lead.fieldData, ["ipd_status", "ipd"]) || "—";
+    // Helper to derive status from bookings
+    const deriveStatus = (bookings = []) => {
+        if (!bookings || bookings.length === 0) return "—";
+        if (bookings.some(b => b.status === "done")) return "done";
+        if (bookings.some(b => b.status === "booked")) return "booked";
+        if (bookings.some(b => b.status === "pending")) return "pending";
+        if (bookings.some(b => b.status === "cancelled")) return "cancelled";
+        return "—";
+    };
+
+    const opdStatus = deriveStatus(lead.opBookings);
+    const ipdStatus = deriveStatus(lead.ipBookings);
     const diagnostic =
         readField(lead.fieldData, ["diagnostic", "diagnostics", "diagnostic_non", "diagnostic_status"]) ||
         "—";

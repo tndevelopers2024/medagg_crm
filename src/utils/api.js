@@ -257,14 +257,28 @@ export const importLeadsFromJson = async () => {
   return data;
 };
 
-// All leads (admin)
+// All leads (admin) — server-paginated
 export const fetchAllLeads = async (params = {}) => {
   const { data } = await api.get("/leads", { params });
   const rows = data?.leads || data?.data || [];
   return {
-    count: data?.count ?? rows.length,
+    page: Number(data?.page ?? params.page ?? 1),
+    limit: Number(data?.limit ?? params.limit ?? 20),
+    total: Number(data?.total ?? rows.length),
+    totalPages: Number(data?.totalPages ?? 1),
     leads: rows.map(normalizeLead),
   };
+};
+
+// Filter metadata (sources, statuses, caller counts)
+export const fetchLeadFilterMeta = async () => {
+  const { data } = await api.get("/leads/filter-meta");
+  return data; // { sources, statuses, callerCounts }
+};
+
+export const deleteLeads = async (leadIds) => {
+  const { data } = await api.post("/leads/delete", { leadIds });
+  return data;
 };
 
 export const assignLeadsByLocation = async (payload) => {
@@ -488,6 +502,15 @@ export const fetchAdminDashboardStats = async () => {
 };
 
 /**
+ * GET /admin/stats/dashboard-v2
+ * Admin dashboard v2 - KPI cards, tables, BD trackers
+ */
+export const fetchAdminDashboardV2 = async (params = {}) => {
+  const { data } = await api.get("/leads/admin/stats/dashboard-v2", { params });
+  return data;
+};
+
+/**
  * GET /admin/stats/activity
  * Admin activity stats - detailed breakdown by caller
  */
@@ -687,8 +710,8 @@ export const bulkUpdateLeads = async (payload) => {
 /* -------------------------------------------
  * CAMPAIGNS
  * ----------------------------------------- */
-export const fetchCampaigns = async () => {
-  const { data } = await api.get("/campaigns");
+export const fetchCampaigns = async (params = {}) => {
+  const { data } = await api.get("/campaigns", { params });
   return data; // { success, count, data: [...] }
 };
 
@@ -700,6 +723,11 @@ export const createCampaign = async (payload) => {
 export const syncCampaign = async (id) => {
   const { data } = await api.post(`/campaigns/${id}/sync`);
   return data; // { success, message, count }
+};
+
+export const updateCampaign = async (id, payload) => {
+  const { data } = await api.put(`/campaigns/${id}`, payload);
+  return data; // { success, data }
 };
 
 export const uploadCampaignLeads = async (id, file) => {
@@ -825,9 +853,7 @@ export const uploadLeadDocument = async (leadId, file) => {
   const formData = new FormData();
   formData.append("file", file);
   // Using generic /leads route which supports both admin & caller roles
-  const { data } = await api.post(`/leads/${leadId}/documents`, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const { data } = await api.post(`/leads/${leadId}/documents`, formData);
   return data; // { success, message, document }
 };
 
@@ -836,5 +862,65 @@ export const deleteLeadDocument = async (leadId, docId) => {
   return data; // { success, message }
 };
 
+/* -------------------------------------------
+ * WHATSAPP TEMPLATES
+ * ----------------------------------------- */
+export const fetchWaTemplates = async () => {
+  const { data } = await api.get("/wa-templates");
+  return data; // { success, count, data: [...] }
+};
+
+export const createWaTemplate = async (payload) => {
+  const { data } = await api.post("/wa-templates", payload);
+  return data; // { success, data: template }
+};
+
+export const updateWaTemplate = async (id, payload) => {
+  const { data } = await api.put(`/wa-templates/${id}`, payload);
+  return data; // { success, data: template }
+};
+
+export const deleteWaTemplate = async (id) => {
+  const { data } = await api.delete(`/wa-templates/${id}`);
+  return data; // { success, message }
+};
+
+/* -------------------------------------------
+ * ALARMS
+ * ----------------------------------------- */
+export const createAlarm = async (leadId, alarmTime, notes = "") => {
+  const { data } = await api.post("/alarms", { leadId, alarmTime, notes });
+  return data;
+};
+
+export const getUserAlarms = async (status = null, limit = 100) => {
+  const params = {};
+  if (status) params.status = status;
+  if (limit) params.limit = limit;
+  const { data } = await api.get("/alarms", { params });
+  return Array.isArray(data) ? data : [];
+};
+
+export const getActiveAlarmsCount = async () => {
+  const { data } = await api.get("/alarms/count");
+  return data?.count ?? 0;
+};
+
+export const getLeadAlarm = async (leadId) => {
+  const { data } = await api.get(`/alarms/lead/${leadId}`);
+  return data;
+};
+
+export const updateAlarm = async (id, payload) => {
+  const { data } = await api.patch(`/alarms/${id}`, payload);
+  return data;
+};
+
+export const deleteAlarm = async (id) => {
+  const { data } = await api.delete(`/alarms/${id}`);
+  return data;
+};
+
 export const apiClient = api;
+
 

@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { FiBell } from "react-icons/fi";
 import { useTopbarTitle } from "../../contexts/TopbarTitleContext";
+import AlarmBadge from "../AlarmBadge";
 
 export default function Topbar() {
   const { title, subtitle } = useTopbarTitle();
@@ -30,7 +31,7 @@ export default function Topbar() {
     )}`;
 
   return (
-    <header className="sticky top-0 z-20 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+    <header className=" z-20 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="h-20 flex items-center justify-between px-3 md:px-6">
         {/* Left: Title + subtitle */}
         <div className="min-w-0">
@@ -47,14 +48,7 @@ export default function Topbar() {
 
         {/* Right */}
         <div className="flex items-center gap-2 md:gap-3">
-          {/* <button
-            style={{ padding: 6, borderRadius: "50%" }}
-            className="relative inline-flex p-0 items-center justify-center rounded-full border border-[#e2deea] bg-white hover:bg-gray-50"
-            aria-label="Notifications"
-          >
-            <FiBell className="text-[18px]" />
-            <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[#6b5aa6]" />
-          </button> */}
+          <AlarmBadge />
           <img
             src={avatarSrc}
             alt="User avatar"

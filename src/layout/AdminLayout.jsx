@@ -1,46 +1,45 @@
 // src/layout/AdminLayout.jsx
 import React, { useState } from "react";
 import { Outlet } from "react-router-dom";
+import { Layout, Drawer } from "antd";
 import Sidebar from "../components/admin/Sidebar";
 import Topbar from "../components/admin/Topbar";
 import { TopbarTitleProvider } from "../contexts/TopbarTitleContext";
+
+const { Content } = Layout;
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <TopbarTitleProvider>
-      <div className="min-h-screen bg-[#f6f3f8] text-gray-800 flex">
-        {/* Mobile overlay */}
-        {sidebarOpen && (
-          <button
-            aria-label="Close sidebar"
-            onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 z-30 bg-black/30 lg:hidden"
-          />
-        )}
-
+      <Layout style={{ minHeight: "100vh" }}>
         {/* Desktop sidebar */}
-        <div className="hidden lg:block sticky top-0 h-screen z-20">
-          <Sidebar open onClose={() => { }} />
+        <div className="hidden lg:block">
+          <Sidebar open onClose={() => {}} />
         </div>
 
-        {/* Mobile sidebar (off-canvas) */}
-        <div
-          className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 shadow-sm lg:hidden transform transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
-            }`}
+        {/* Mobile sidebar (Ant Drawer) */}
+        <Drawer
+          placement="left"
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          width={260}
+          styles={{ body: { padding: 0 } }}
+          className="lg:hidden"
+          closable={false}
         >
           <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        </div>
+        </Drawer>
 
         {/* Main area */}
-        <div className="flex-1 min-w-0">
+        <Layout style={{ background: "#f6f3f8" }}>
           <Topbar onMenu={() => setSidebarOpen(true)} />
-          <main className="p-4 md:p-6 lg:p-8">
+          <Content style={{ padding: "16px", minHeight: "auto" }} className="md:p-6 lg:p-8">
             <Outlet />
-          </main>
-        </div>
-      </div>
+          </Content>
+        </Layout>
+      </Layout>
     </TopbarTitleProvider>
   );
 }

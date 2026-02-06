@@ -1,128 +1,127 @@
 import React from "react";
+import { Input, Select, DatePicker, TimePicker } from "antd";
+import dayjs from "dayjs";
 
 // Dynamic field renderer component
 export const DynamicField = ({ field, value, onChange, error }) => {
-    const handleChange = (e) => {
-        const newValue = e.target.type === "checkbox" ? e.target.checked : e.target.value;
-        onChange(field.fieldName, newValue);
+    const handleChange = (val) => {
+        onChange(field.fieldName, val);
     };
 
-    const commonClasses = "w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-100 placeholder:text-gray-400";
-    const errorClasses = error ? "border-red-300 focus:ring-red-100" : "";
+    const handleInputChange = (e) => {
+        onChange(field.fieldName, e.target.value);
+    };
+
+    const handleCheckboxChange = (e) => {
+        onChange(field.fieldName, e.target.checked);
+    };
 
     const renderInput = () => {
         switch (field.fieldType) {
             case "text":
                 return (
-                    <input
-                        type="text"
+                    <Input
                         value={value || ""}
-                        onChange={handleChange}
+                        onChange={handleInputChange}
                         placeholder={field.placeholder}
-                        required={field.isRequired}
-                        className={`${commonClasses} ${errorClasses}`}
+                        status={error ? "error" : undefined}
                     />
                 );
 
             case "phone":
                 return (
-                    <input
+                    <Input
                         type="tel"
                         value={value || ""}
-                        onChange={handleChange}
+                        onChange={handleInputChange}
                         placeholder={field.placeholder}
-                        required={field.isRequired}
-                        pattern={field.validation?.pattern}
-                        className={`${commonClasses} ${errorClasses}`}
+                        status={error ? "error" : undefined}
                     />
                 );
 
             case "email":
                 return (
-                    <input
+                    <Input
                         type="email"
                         value={value || ""}
-                        onChange={handleChange}
+                        onChange={handleInputChange}
                         placeholder={field.placeholder}
-                        required={field.isRequired}
-                        className={`${commonClasses} ${errorClasses}`}
+                        status={error ? "error" : undefined}
                     />
                 );
 
             case "number":
                 return (
-                    <input
+                    <Input
                         type="number"
                         value={value || ""}
-                        onChange={handleChange}
+                        onChange={handleInputChange}
                         placeholder={field.placeholder}
-                        required={field.isRequired}
                         min={field.validation?.min}
                         max={field.validation?.max}
-                        className={`${commonClasses} ${errorClasses}`}
+                        status={error ? "error" : undefined}
                     />
                 );
 
             case "date":
                 return (
-                    <input
-                        type="date"
-                        value={value || ""}
-                        onChange={handleChange}
-                        required={field.isRequired}
-                        className={`${commonClasses} ${errorClasses}`}
+                    <DatePicker
+                        value={value ? dayjs(value) : null}
+                        onChange={(d) => handleChange(d ? d.format("YYYY-MM-DD") : "")}
+                        className="w-full"
+                        status={error ? "error" : undefined}
                     />
                 );
 
             case "time":
                 return (
-                    <input
-                        type="time"
-                        value={value || ""}
-                        onChange={handleChange}
-                        required={field.isRequired}
-                        className={`${commonClasses} ${errorClasses}`}
+                    <TimePicker
+                        value={value ? dayjs(value, "HH:mm") : null}
+                        onChange={(t) => handleChange(t ? t.format("HH:mm") : "")}
+                        className="w-full"
+                        format="HH:mm"
+                        status={error ? "error" : undefined}
                     />
                 );
 
             case "dropdown":
                 return (
-                    <select
-                        value={value || ""}
-                        onChange={handleChange}
-                        required={field.isRequired}
-                        className={`${commonClasses} ${errorClasses}`}
-                    >
-                        <option value="">{field.placeholder || "Select..."}</option>
-                        {field.options?.map((option, index) => (
-                            <option key={index} value={option}>
-                                {option}
-                            </option>
-                        ))}
-                    </select>
+                    <Select
+                        value={value || undefined}
+                        onChange={(val) => handleChange(val)}
+                        placeholder={field.placeholder || "Select..."}
+                        className="w-full"
+                        status={error ? "error" : undefined}
+                        allowClear
+                        showSearch
+                        filterOption={(input, option) =>
+                            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                        }
+                        options={field.options?.map((option) => ({
+                            label: option,
+                            value: option,
+                        }))}
+                    />
                 );
 
             case "textarea":
                 return (
-                    <textarea
+                    <Input.TextArea
                         rows={4}
                         value={value || ""}
-                        onChange={handleChange}
+                        onChange={handleInputChange}
                         placeholder={field.placeholder}
-                        required={field.isRequired}
-                        className={`${commonClasses} ${errorClasses}`}
+                        status={error ? "error" : undefined}
                     />
                 );
 
             default:
                 return (
-                    <input
-                        type="text"
+                    <Input
                         value={value || ""}
-                        onChange={handleChange}
+                        onChange={handleInputChange}
                         placeholder={field.placeholder}
-                        required={field.isRequired}
-                        className={`${commonClasses} ${errorClasses}`}
+                        status={error ? "error" : undefined}
                     />
                 );
         }
