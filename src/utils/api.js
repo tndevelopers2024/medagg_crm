@@ -12,11 +12,9 @@ export {
 /* -------------------------------------------
  * Axios client
  * ----------------------------------------- */
-export const BASE_URL =
-  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
-  (window.location.hostname === "localhost"
-    ? "https://medagg.online/api/v1"
-    : "https://medagg.online/api/v1");
+export const BASE_URL = import.meta.env.PROD
+  ? "https://medagg.online/api/v1"
+  : "http://localhost:5013/api/v1";
 
 const api = axios.create({
   baseURL: BASE_URL,
