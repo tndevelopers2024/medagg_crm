@@ -1,0 +1,20 @@
+{
+    "name": "medagg-unified",
+    "version": "1.0.0",
+    "description": "Unified Medagg CRM Project",
+    "scripts": {
+        "install:backend": "cd backend && npm install",
+        "install:frontend": "cd frontend && npm install",
+        "install:all": "npm run install:backend && npm run install:frontend",
+        "build": "npm run build:frontend && npm run build:backend",
+        "build:frontend": "cd frontend && npm run build",
+        "build:backend": "cd backend && npm run build --if-present",
+        "start": "NODE_ENV=production npm run start:backend",
+        "start:backend": "cd backend && node server.js",
+        "start:frontend": "cd frontend && npm run dev",
+        "develop": "npx concurrently \"npm run start:backend\" \"npm run start:frontend\""
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}
