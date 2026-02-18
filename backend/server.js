@@ -73,7 +73,12 @@ const allowedOrigins = [
   "http://127.0.0.1:5174",
   "https://medagg-crm.vercel.app",
   "https://www.ardpgimerchd.org",
+
+  // ✅ ADD THESE
+  "https://medagg.online",
+  "https://www.medagg.online"
 ];
+
 
 app.use(
   cors({
