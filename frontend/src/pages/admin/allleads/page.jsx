@@ -488,6 +488,7 @@ export default function LeadsManagement() {
             pageSize={pageSize}
             setPageSize={setPageSize}
             filteredCount={serverMeta.total}
+            
           />
 
           {/* Location Assign Button */}
