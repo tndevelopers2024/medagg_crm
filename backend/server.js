@@ -190,14 +190,20 @@ const limiter = rateLimit({
 });
 app.use("/api", limiter);
 
+// ------------------------------------
 // Logging
-if (process.env.NODE_ENV === "development") {
-  app.use(morgan("dev"));
-}
+// ------------------------------------
+app.use(morgan("dev"));
 
 // ------------------------------------
-// Static
+// Frontend Static Files (Production)
 // ------------------------------------
+if (process.env.NODE_ENV === "production") {
+  const distPath = path.resolve(__dirname, "../frontend/dist");
+  app.use(express.static(distPath));
+}
+
+// Backend static files
 app.use("/public", express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/uploads/lead_documents", express.static(path.join(__dirname, "uploads/lead_documents")));
@@ -226,16 +232,14 @@ app.use("/api/v1/roles", roleRoutes);
 app.use("/api/v1/teams", teamRoutes);
 
 // ------------------------------------
-// Frontend Static Files (Production)
+// Frontend Catch-all (Production)
 // ------------------------------------
 if (process.env.NODE_ENV === "production") {
-  app.use(express.static(path.join(__dirname, "../frontend/dist")));
-  app.use((req, res, next) => {
-    if (!req.path.startsWith("/api/")) {
-      res.sendFile(path.resolve(__dirname, "../frontend/dist", "index.html"));
-    } else {
-      next();
+  app.get("/*", (req, res, next) => {
+    if (req.path.startsWith("/api/")) {
+      return next();
     }
+    res.sendFile(path.resolve(__dirname, "../frontend/dist", "index.html"));
   });
 }
 
