@@ -13,7 +13,7 @@ export {
  * Axios client
  * ----------------------------------------- */
 export const BASE_URL = import.meta.env.PROD
-  ? "https://medagg.online/api/v1"
+  ? "/api/v1"
   : "https://medagg.online/api/v1";
 
 const api = axios.create({

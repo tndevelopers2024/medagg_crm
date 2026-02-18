@@ -11,7 +11,7 @@ const SOCKET_URL =
   (typeof import.meta !== "undefined" &&
     import.meta.env &&
     import.meta.env.VITE_SOCKET_URL) ||
-  FALLBACK_URL;
+  (typeof window !== "undefined" ? window.location.origin : FALLBACK_URL);
 
 const SOCKET_PATH = "/socket.io"; // must match server
 
