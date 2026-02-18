@@ -14,7 +14,7 @@ export {
  * ----------------------------------------- */
 export const BASE_URL = import.meta.env.PROD
   ? "/api/v1"
-  : "https://medagg.online/api/v1";
+  : "http://localhost:5013/api/v1";
 
 const api = axios.create({
   baseURL: BASE_URL,

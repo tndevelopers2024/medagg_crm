@@ -1,7 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 
-const API_URL = import.meta.env.VITE_API_URL || "https://medagg.online/api/v1";
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "/api/v1" : "http://localhost:5013/api/v1");
 
 export default function useLeadExport() {
     const [exporting, setExporting] = useState(false);

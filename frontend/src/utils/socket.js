@@ -5,7 +5,7 @@ import { io } from "socket.io-client";
 // • window.location.origin keeps FE/BE aligned in prod behind Nginx.
 // • You can still override with VITE_SOCKET_URL during local dev.
 const FALLBACK_URL =
-  "https://medagg.online";
+  "http://localhost:5013";
 
 const SOCKET_URL =
   (typeof import.meta !== "undefined" &&
