@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+:root {
+	--color-bg: #fff;
+	--color-primary: #322554;
+	--color-secondary: #E9296A;
+	--color-card: #fff;
+	--color-border: #e5e7eb;
+	--color-text: #1e293b;
+}
+
+html {
+	box-sizing: border-box;
+	font-size: 16px;
+	background: var(--color-bg);
+	color: var(--color-text);
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: inherit;
+}
+
+body {
+	margin: 0;
+	font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+	background: var(--color-bg);
+	color: var(--color-text);
+	min-height: 100vh;
+	line-height: 1.5;
+}
+
+
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	font-weight: 700;
+	margin-top: 0;
+
+}
+
+input,
+button,
+textarea,
+select {
+	font: inherit;
+	outline: none;
+}
+
+.button {
+	cursor: pointer;
+	border-radius: 0.5rem;
+	background: var(--color-primary);
+	color: #fff;
+	padding: 0.5rem 1.25rem;
+	font-weight: 500;
+	transition: background 0.2s;
+}
+
+.button:hover {
+	background: var(--color-secondary);
+}
+
+::-webkit-scrollbar {
+	width: 8px;
+	background: #e5e7eb;
+}
+
+::-webkit-scrollbar-thumb {
+	background: #cbd5e1;
+	border-radius: 4px;
+}
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.animate-fadeIn {
+	animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes rowFlash {
+	0% {
+		background-color: rgba(99, 102, 241, 0.2);
+	}
+
+	100% {
+		background-color: transparent;
+	}
+}
+
+.animate-rowFlash {
+	animation: rowFlash 2s ease-out;
+}
+
+/* Ant Menu Overrides for Sidebar */
+.ant-menu-light .ant-menu-item-selected {
+	background-color: var(--color-primary) !important;
+	color: #fff !important;
+}
+
+/* Ensure icon color changes too */
+.ant-menu-light .ant-menu-item-selected .anticon {
+	color: #fff !important;
+}
+
+/* Hover state */
+.ant-menu-light .ant-menu-item:hover:not(.ant-menu-item-selected) {
+	color: var(--color-primary) !important;
+	background-color: #f3f0ff !important;
+	/* light purple tint */
+}

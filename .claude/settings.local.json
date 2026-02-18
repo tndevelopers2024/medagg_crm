@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__ide__getDiagnostics",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(npm install:*)",
+      "Bash(grep:*)",
+      "Bash(node -c:*)",
+      "Bash(node:*)",
+      "Bash(xargs ls:*)",
+      "Bash(./gradlew:*)",
+      "Bash(npx react-native run-android)",
+      "Bash(adb shell:*)",
+      "mcp__ide__executeCode",
+      "Bash(npm run build:*)"
+    ]
+  }
+}
