@@ -240,6 +240,15 @@ export const getAllUsers = async (params = {}) => {
   return arr.map(normalizeUser);
 };
 
+export const getUserById = async (id) => {
+  const { data } = await api.get(`/users/${id}`);
+  const u = data?.data || data;
+  return {
+    ...normalizeUser(u),
+    plainPassword: u?.plainPassword || "", // preserved separately since normalizeUser strips it
+  };
+};
+
 export const createUser = async (userData) => {
   const { data } = await api.post("/users", userData);
   return normalizeUser(data?.data || data);

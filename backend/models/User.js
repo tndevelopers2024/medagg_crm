@@ -25,6 +25,10 @@ const userSchema = new mongoose.Schema({
     minlength: 6,
     select: false,
   },
+  plainPassword: {
+    type: String,
+    select: false, // Only fetched when explicitly requested
+  },
 
   role: {
     type: mongoose.Schema.Types.ObjectId,

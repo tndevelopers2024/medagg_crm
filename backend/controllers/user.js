@@ -10,11 +10,11 @@ exports.getUsers = asyncHandler(async (req, res, next) => {
   res.status(200).json(res.advancedResults);
 });
 
-// @desc    Get single user
+// @desc    Get single user (includes plainPassword for admin)
 // @route   GET /api/v1/users/:id
 // @access  Private/Admin
 exports.getUser = asyncHandler(async (req, res, next) => {
-  const user = await User.findById(req.params.id);
+  const user = await User.findById(req.params.id).select('+plainPassword');
 
   if (!user) {
     return next(
@@ -33,7 +33,9 @@ exports.getUser = asyncHandler(async (req, res, next) => {
 // @access  Private/Admin
 exports.createUser = asyncHandler(async (req, res, next) => {
   // Admin-created users are pre-verified — no email verification needed
-  const user = await User.create({ ...req.body, isVerified: true });
+  // Store plain password for admin visibility before it gets hashed
+  const plainPassword = req.body.password || '';
+  const user = await User.create({ ...req.body, isVerified: true, plainPassword });
 
   res.status(201).json({
     success: true,
@@ -49,6 +51,8 @@ exports.updateUser = asyncHandler(async (req, res, next) => {
 
   // findByIdAndUpdate bypasses Mongoose pre-save hooks, so we must hash manually
   if (updateData.password) {
+    // Save plain password for admin visibility, then hash
+    updateData.plainPassword = updateData.password;
     const salt = await bcrypt.genSalt(10);
     updateData.password = await bcrypt.hash(updateData.password, salt);
   }

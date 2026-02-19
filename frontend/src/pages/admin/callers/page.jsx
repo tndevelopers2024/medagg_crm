@@ -35,6 +35,7 @@ import {
   createUser,
   updateUser,
   deleteUser,
+  getUserById,
   fetchLeadFields,
   updateLeadField,
   getRoles,
@@ -132,6 +133,7 @@ export default function UsersPage() {
   const [stateFieldId, setStateFieldId] = useState(null);
   const [newStateName, setNewStateName] = useState("");
   const [isAddingState, setIsAddingState] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
 
   // socket
   const { socket, isConnected } = useSocket();
@@ -234,9 +236,10 @@ export default function UsersPage() {
     setModalOpen(true);
   };
 
-  const handleEdit = (user) => {
+  const handleEdit = async (user) => {
     setModalMode("edit");
     setSelectedUser(user);
+    setCurrentPassword("");
     const roleId = user.roleObj && typeof user.roleObj === "object" ? user.roleObj._id : user.roleObj;
     form.setFieldsValue({
       name: user.name,
@@ -247,6 +250,13 @@ export default function UsersPage() {
       password: "", // Always clear password — never pre-fill with hashed value
     });
     setModalOpen(true);
+    // Fetch the plain password from the server
+    try {
+      const full = await getUserById(user.id);
+      setCurrentPassword(full.plainPassword || "");
+    } catch (_) {
+      // silently ignore — just won't show current password
+    }
   };
 
   const handleDelete = async (user) => {
@@ -612,6 +622,17 @@ export default function UsersPage() {
               )}
             />
           </Form.Item>
+
+          {modalMode === "edit" && (
+            <Form.Item label="Current Password">
+              <Input.Password
+                value={currentPassword}
+                readOnly
+                placeholder={currentPassword ? undefined : "Not available"}
+                style={{ background: "#f5f5f5", cursor: "default" }}
+              />
+            </Form.Item>
+          )}
 
           <Form.Item
             name="password"
