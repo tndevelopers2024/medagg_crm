@@ -78,7 +78,7 @@ const normalizeLead = (raw = {}) => {
 };
 
 const normalizeUser = (u = {}) => {
-  const { city, state, ...rest } = u;
+  const { city, state, password: _password, ...rest } = u;
   // role may be a string (legacy) or an object (populated Role doc)
   const rawRole = u.role;
   const role = rawRole && typeof rawRole === "object" ? rawRole : rawRole;

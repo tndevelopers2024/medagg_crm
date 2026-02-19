@@ -244,6 +244,7 @@ export default function UsersPage() {
       phone: user.phone,
       state: user.state || [],
       role: roleId,
+      password: "", // Always clear password — never pre-fill with hashed value
     });
     setModalOpen(true);
   };
