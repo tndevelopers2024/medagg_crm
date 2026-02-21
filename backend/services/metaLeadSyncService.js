@@ -163,13 +163,21 @@ async function processFormLeadsBatch({ formId, accessToken, pageLimit = 100, pro
   let url = `${formId}/leads`;
   let processedCount = 0;
 
+  // Filter for Feb 16, 2026 00:00:00 IST onwards
+  const sinceTimestamp = process.env.META_SYNC_SINCE || 1771180200;
+
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    const params = { fields, limit: pageLimit };
+    if (sinceTimestamp) {
+      params.filtering = JSON.stringify([{ field: "time_created", operator: "GREATER_THAN_OR_EQUAL", value: Number(sinceTimestamp) }]);
+    }
+
     const data = await graphGet(
       url,
       {
         accessToken,
-        params: { fields, limit: pageLimit },
+        params,
       },
       { maxAttempts: 6 }
     );
