@@ -118,7 +118,7 @@ leadSchema.pre("save", function (next) {
 
     // 1. Derive states from city if missing
     if (!stateVals || stateVals.length === 0) {
-      const { getStateFromCity } = require("../../utils/cityStateMap");
+      const { getStateFromCity } = require("../utils/cityStateMap");
       const derivedState = getStateFromCity(city);
       if (derivedState) {
         fd.push({ name: "states", values: [derivedState] });
