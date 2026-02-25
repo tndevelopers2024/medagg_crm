@@ -1062,6 +1062,34 @@ export const getPermissions = async () => {
   return data; // { success, data: PERMISSION_TREE }
 };
 
+/* -------------------------------------------
+ * CSV IMPORT
+ * ----------------------------------------- */
+export const importCsvLeads = async (payload) => {
+  const { data } = await api.post("/import/leads", payload);
+  return data; // { success, imported, skipped, failed, errors }
+};
+
+export const fetchImportMappings = async () => {
+  const { data } = await api.get("/import/mappings");
+  return data; // { success, data: [...] }
+};
+
+export const saveImportMapping = async (payload) => {
+  const { data } = await api.post("/import/mappings", payload);
+  return data; // { success, data }
+};
+
+export const deleteImportMapping = async (id) => {
+  const { data } = await api.delete(`/import/mappings/${id}`);
+  return data; // { success, message }
+};
+
+export const importActivities = async (payload) => {
+  const { data } = await api.post("/import/activities", payload);
+  return data; // { success, imported, skipped, failed, errors, total }
+};
+
 export const apiClient = api;
 
 

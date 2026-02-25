@@ -22,6 +22,11 @@ const LeadActivitySchema = new mongoose.Schema(
         "ip_booking_remove",
         "call_logged",
         "recording_uploaded",
+        // TelCRM imported activities
+        "telcrm_call",
+        "telcrm_note",
+        "telcrm_system_note",
+        "telcrm_whatsapp",
       ],
       required: true,
     },

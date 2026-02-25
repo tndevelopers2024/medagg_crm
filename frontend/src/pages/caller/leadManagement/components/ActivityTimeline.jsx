@@ -20,47 +20,47 @@ export default function ActivityTimeline({
   const timelineItems =
     activities && activities.length
       ? activities.map((a) => {
-          const aid = String(a.id || a._id);
-          const at = a.createdAt ? new Date(a.createdAt) : null;
-          const when = at
-            ? `${at.toLocaleDateString()} • ${fmtTime(at)}`
-            : "";
-          const meta = actionMeta(a.action);
+        const aid = String(a.id || a._id);
+        const at = a.createdAt ? new Date(a.createdAt) : null;
+        const when = at
+          ? `${at.toLocaleDateString()} • ${fmtTime(at)}`
+          : "";
+        const meta = actionMeta(a.action);
 
-          return {
-            key: aid,
-            dot: (
-              <div
-                className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${meta.tone}`}
-              >
-                <meta.Icon className="w-3.5 h-3.5" />
+        return {
+          key: aid,
+          dot: (
+            <div
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${meta.tone}`}
+            >
+              <meta.Icon className="w-3.5 h-3.5" />
+            </div>
+          ),
+          children: (
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-gray-900">
+                  {formatActivity(a)}
+                </span>
+                <span className="text-xs text-gray-500">{when}</span>
               </div>
-            ),
-            children: (
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-gray-900">
-                    {formatActivity(a)}
-                  </span>
-                  <span className="text-xs text-gray-500">{when}</span>
-                </div>
 
-                {a.action === "recording_uploaded" &&
-                  a.meta?.recordingFilename && (
-                    <div className="mt-2">
-                      <audio
-                        controls
-                        src={`${BASE_URL.replace(
-                          "/api/v1",
-                          ""
-                        )}/uploads/recordings/${a.meta.recordingFilename}`}
-                        className="w-full max-w-md h-8"
-                      />
-                    </div>
-                  )}
+              {a.action === "recording_uploaded" &&
+                a.meta?.recordingFilename && (
+                  <div className="mt-2">
+                    <audio
+                      controls
+                      src={`${BASE_URL.replace(
+                        "/api/v1",
+                        ""
+                      )}/uploads/recordings/${a.meta.recordingFilename}`}
+                      className="w-full max-w-md h-8"
+                    />
+                  </div>
+                )}
 
-                {((a.diff && (a.diff.before || a.diff.after)) ||
-                  (a.meta && Object.keys(a.meta).length > 0)) && (
+              {((a.diff && (a.diff.before || a.diff.after)) ||
+                (a.meta && Object.keys(a.meta).length > 0)) && (
                   <div className="mt-2 text-xs">
                     <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-2">
                       {(a.diff?.before || a.diff?.after) && (
@@ -110,7 +110,7 @@ export default function ActivityTimeline({
                       {a.meta && Object.keys(a.meta).length > 0 && (
                         <div className="mt-2 pt-2 border-t border-gray-200">
                           {Object.entries(a.meta).map(([mKey, mVal]) => {
-                            if (mKey === "recordingFilename") return null;
+                            if (mKey === "recordingFilename" || mKey === "source") return null;
                             return (
                               <div
                                 key={mKey}
@@ -126,10 +126,10 @@ export default function ActivityTimeline({
                     </div>
                   </div>
                 )}
-              </div>
-            ),
-          };
-        })
+            </div>
+          ),
+        };
+      })
       : [];
 
   return (

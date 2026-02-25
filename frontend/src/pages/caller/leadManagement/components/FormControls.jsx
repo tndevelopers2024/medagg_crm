@@ -38,9 +38,15 @@ export const Select = ({ label, value, onChange, options = [], onAddOption, ...r
       <AntSelect
         value={value}
         onChange={(val) => onChange({ target: { value: val } })}
-        options={options}
+        options={
+          // If current value isn't in predefined options, add it so imported data always shows
+          value && !options.some(o => (o.value || o) === value)
+            ? [{ label: value, value }, ...options]
+            : options
+        }
         className="w-full"
         showSearch
+        allowClear
         filterOption={(input, option) =>
           (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
         }

@@ -45,6 +45,7 @@ const alarmRoutes = require("./routes/alarms");
 const exportRoutes = require("./routes/export");
 const roleRoutes = require("./routes/roleRoutes");
 const teamRoutes = require("./routes/teamRoutes");
+const importRoutes = require("./routes/importRoutes");
 
 // integrations
 const { syncMetaLeads, syncMetaCampaigns } = require("./services/metaLeadSyncService");
@@ -235,6 +236,7 @@ app.use("/api/v1/alarms", alarmRoutes);
 app.use("/api/v1/export", exportRoutes);
 app.use("/api/v1/roles", roleRoutes);
 app.use("/api/v1/teams", teamRoutes);
+app.use("/api/v1/import", importRoutes);
 
 // ------------------------------------
 // Frontend Catch-all (Production)

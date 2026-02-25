@@ -12,7 +12,8 @@ const bookingSchema = new mongoose.Schema(
         values: [String],
       },
     ],
-    status: { type: String, enum: bookingStatusEnum, default: "pending" },
+    // No enum — accept any value during import, normalize at application level
+    status: { type: String, default: "pending" },
 
     // Explicit fields to match OP/IP keys (prevent strict mode stripping)
     booked: { type: Boolean, default: false },
@@ -34,6 +35,8 @@ const leadSchema = new mongoose.Schema(
     leadId: { type: String, required: true, unique: true },
     // Meta Lead Ads identifiers (for dedupe & attribution)
     metaLeadId: { type: String, unique: true, sparse: true, index: true },
+    // TelCRM Lead ID (used to link activity imports)
+    telcrmLeadId: { type: String, unique: true, sparse: true, index: true },
     formId: { type: String, index: true },
     campaignId: String,
     adId: String,
@@ -56,6 +59,7 @@ const leadSchema = new mongoose.Schema(
     },
 
     notes: { type: String, default: "" },
+    rating: { type: Number, default: 0 },
     lastCallAt: { type: Date, default: null },
     followUpAt: { type: Date, default: null },
     callCount: { type: Number, default: 0 },
@@ -114,7 +118,7 @@ leadSchema.pre("save", function (next) {
 
     // 1. Derive states from city if missing
     if (!stateVals || stateVals.length === 0) {
-      const { getStateFromCity } = require("../utils/cityStateMap");
+      const { getStateFromCity } = require("../../utils/cityStateMap");
       const derivedState = getStateFromCity(city);
       if (derivedState) {
         fd.push({ name: "states", values: [derivedState] });

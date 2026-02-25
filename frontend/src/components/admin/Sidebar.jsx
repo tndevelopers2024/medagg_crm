@@ -13,6 +13,7 @@ import {
   AppstoreOutlined,
   SettingOutlined,
   LogoutOutlined,
+  CloudUploadOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../../contexts/AuthContext";
 import { clearUserData, getRoleName } from "../../utils/roleUtils";
@@ -139,6 +140,12 @@ export default function Sidebar({ open, onClose }) {
         icon: <UploadOutlined />,
         label: "Bulk Upload",
         permission: "campaigns.import.view",
+      },
+      {
+        key: "/import/csv",
+        icon: <CloudUploadOutlined />,
+        label: "Import CSV",
+        permission: "campaigns.import.import",
       },
       {
         key: "/callers",

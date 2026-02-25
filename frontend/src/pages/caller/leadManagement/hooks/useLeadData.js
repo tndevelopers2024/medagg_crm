@@ -4,6 +4,7 @@ import {
   fetchLeadDetail,
   updateLeadField,
 } from "../../../../utils/api";
+import { getStateFromCity } from "../../../../utils/cityStateMap";
 import { useLeadFields, useLeadStages, useCampaigns, useUsers } from "../../../../hooks/queries/useConfigQueries";
 import { queryKeys } from "../../../../hooks/queries/queryKeys";
 import { useAuth } from "../../../../contexts/AuthContext";
@@ -141,6 +142,16 @@ export default function useLeadData(id, loadActivities) {
     });
   }, [lead]);
 
+  // Auto-populate state from city on initial load (when Meta only sends city)
+  useEffect(() => {
+    setLeadData((prev) => {
+      if (!prev.city || prev.states) return prev;
+      const derivedState = getStateFromCity(prev.city);
+      if (!derivedState) return prev;
+      return { ...prev, states: derivedState };
+    });
+  }, [leadData.city]);
+
   const loadLeadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -181,7 +192,17 @@ export default function useLeadData(id, loadActivities) {
   }, [loadLeadData]);
 
   const handleLeadFieldChange = (fieldName, value) => {
-    setLeadData((prev) => ({ ...prev, [fieldName]: value }));
+    setLeadData((prev) => {
+      const updated = { ...prev, [fieldName]: value };
+      // Auto-populate state when city is selected
+      if (fieldName === "city" && value) {
+        const derivedState = getStateFromCity(value);
+        if (derivedState) {
+          updated.states = derivedState;
+        }
+      }
+      return updated;
+    });
   };
 
   const handleAddLeadOption = async (field, newValue) => {

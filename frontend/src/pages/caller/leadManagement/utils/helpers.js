@@ -6,6 +6,9 @@ import {
   FiList,
   FiPlusCircle,
   FiTrash2,
+  FiMessageSquare,
+  FiFileText,
+  FiSettings,
 } from "react-icons/fi";
 
 // ---------- class name joiner ----------
@@ -100,6 +103,26 @@ export const actionMeta = (action = "") => {
       Icon: FiTrash2,
       tone: "bg-rose-50 text-rose-700 border-rose-200",
     },
+    telcrm_call: {
+      Icon: FiPhoneCall,
+      tone: "bg-sky-50 text-sky-700 border-sky-200",
+      label: "TelCRM Call",
+    },
+    telcrm_note: {
+      Icon: FiFileText,
+      tone: "bg-green-50 text-green-700 border-green-200",
+      label: "TelCRM Note",
+    },
+    telcrm_system_note: {
+      Icon: FiSettings,
+      tone: "bg-orange-50 text-orange-700 border-orange-200",
+      label: "TelCRM System Note",
+    },
+    telcrm_whatsapp: {
+      Icon: FiMessageSquare,
+      tone: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      label: "TelCRM WhatsApp",
+    },
   };
   return { ...base, ...(map[action] || {}) };
 };
@@ -154,17 +177,22 @@ export const formatActivity = (a) => {
     const type = a.action.includes("add")
       ? "added"
       : a.action.includes("update")
-      ? "updated"
-      : "removed";
+        ? "updated"
+        : "removed";
     return `${actor} ${type} an OP booking`;
   }
   if (a.action?.startsWith("ip_booking_")) {
     const type = a.action.includes("add")
       ? "added"
       : a.action.includes("update")
-      ? "updated"
-      : "removed";
+        ? "updated"
+        : "removed";
     return `${actor} ${type} an IP booking`;
+  }
+
+  // TelCRM imported activities — use description directly (it's pre-formatted)
+  if (a.action?.startsWith("telcrm_")) {
+    return a.description || `${actor} imported activity`;
   }
 
   return `${actor} performed ${a.action.replace(/_/g, " ")}`;

@@ -20,6 +20,7 @@ import SearchLeadsPage from "./pages/admin/searchLeads/page.jsx";
 import CampaignsPage from "./pages/admin/campaigns/page.jsx";
 import ImportLeadsPage from "./pages/admin/campaigns/import/page.jsx";
 import BulkUploadPage from "./pages/admin/bulkUpload/page.jsx";
+import CsvImportPage from "./pages/admin/import/page.jsx";
 import FieldSettingsPage from "./pages/admin/fieldSettings/page.jsx";
 import BookingFieldSettingsPage from "./pages/admin/bookingFieldSettings/page.jsx";
 import LeadStagesPage from "./pages/admin/leadStages/page.jsx";
@@ -79,6 +80,7 @@ createRoot(document.getElementById("root")).render(
                 <Route path="/campaigns/:id/import" element={<ImportLeadsPage />} />
                 <Route path="/campaigns/import" element={<ImportLeadsPage />} />
                 <Route path="/bulk-upload" element={<BulkUploadPage />} />
+                <Route path="/import/csv" element={<CsvImportPage />} />
 
                 {/* Users/Callers */}
                 <Route path="/callers" element={<Callers />} />
