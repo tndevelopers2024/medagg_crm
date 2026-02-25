@@ -82,10 +82,16 @@ export default function MedCRMLogin({
         // Check if user is system admin (Admin role with isSystem flag)
         const roleObj = rawRole && typeof rawRole === "object" ? rawRole : null;
         const isSystemAdmin = !!(roleObj?.isSystem && role === "admin");
-        const hasDashboardPermission = roleObj?.permissions?.includes("dashboard.dashboard.view");
 
-        // System admins or users with dashboard permission go to dashboard
-        destination = (isSystemAdmin || hasDashboardPermission) ? "/dashboard" : (redirectTo || "/");
+        // Check if the user has any dashboard view permission
+        const hasDashboardPermission = roleObj?.permissions?.includes("dashboard.dashboard.view") ||
+          roleObj?.permissions?.includes("dashboard.dashboard.viewAssigned") ||
+          roleObj?.permissions?.includes("dashboard.team.view");
+
+        // System admins, explicit managers, or users with dashboard permission go to dashboard
+        const isManager = role === "manager" || role === "administrator" || role === "owner";
+
+        destination = (isSystemAdmin || isManager || hasDashboardPermission) ? "/dashboard" : (redirectTo || "/");
       }
 
       // Small delay to let the toast be seen before redirect
