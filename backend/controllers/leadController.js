@@ -11,7 +11,7 @@ const { getRoleIdByName } = require("../utils/roleHelpers");
 const normalizePhone = (raw) => (String(raw || "")).replace(/\D/g, "");
 const isValidPhone = (raw) => {
   const d = normalizePhone(raw);
-  return d.length >= 7 && d.length <= 15;
+  return d.length >= 7 && d.length <= 30;
 };
 
 /**
@@ -1488,7 +1488,7 @@ const getAdminDashboardStats = async (req, res) => {
     const opdBookedToday = await Lead.aggregate([
       { $match: leadMatch },
       { $unwind: "$opBookings" },
-      { $match: { "opBookings.createdAt": { $gte: todayStart, $lte: todayEnd } } },
+      { $match: { "opBookings.date": { $gte: todayStart, $lte: todayEnd } } },
       { $group: { _id: "$_id" } }, // Deduplicate by Lead ID
       { $count: "count" }
     ]);
@@ -1501,7 +1501,7 @@ const getAdminDashboardStats = async (req, res) => {
           "opBookings.status": "done",
           $or: [
             { "opBookings.doneDate": { $gte: todayStart, $lte: todayEnd } },
-            { "opBookings.doneDate": { $exists: false }, "opBookings.updatedAt": { $gte: todayStart, $lte: todayEnd } }
+            { "opBookings.doneDate": { $exists: false }, "opBookings.date": { $gte: todayStart, $lte: todayEnd } }
           ]
         }
       },
@@ -1517,7 +1517,7 @@ const getAdminDashboardStats = async (req, res) => {
           "ipBookings.status": "done",
           $or: [
             { "ipBookings.doneDate": { $gte: todayStart, $lte: todayEnd } },
-            { "ipBookings.doneDate": { $exists: false }, "ipBookings.updatedAt": { $gte: todayStart, $lte: todayEnd } }
+            { "ipBookings.doneDate": { $exists: false }, "ipBookings.date": { $gte: todayStart, $lte: todayEnd } }
           ]
         }
       },
@@ -1528,7 +1528,7 @@ const getAdminDashboardStats = async (req, res) => {
     const diagnosticBookedToday = await Lead.aggregate([
       { $match: leadMatch },
       { $unwind: "$diagnosticBookings" },
-      { $match: { "diagnosticBookings.createdAt": { $gte: todayStart, $lte: todayEnd } } },
+      { $match: { "diagnosticBookings.date": { $gte: todayStart, $lte: todayEnd } } },
       { $group: { _id: "$_id" } },
       { $count: "count" }
     ]);
@@ -1541,7 +1541,7 @@ const getAdminDashboardStats = async (req, res) => {
           "diagnosticBookings.status": "done",
           $or: [
             { "diagnosticBookings.doneDate": { $gte: todayStart, $lte: todayEnd } },
-            { "diagnosticBookings.doneDate": { $exists: false }, "diagnosticBookings.updatedAt": { $gte: todayStart, $lte: todayEnd } }
+            { "diagnosticBookings.doneDate": { $exists: false }, "diagnosticBookings.date": { $gte: todayStart, $lte: todayEnd } }
           ]
         }
       },
@@ -2181,7 +2181,7 @@ const getAdminDashboardV2 = async (req, res) => {
       Lead.aggregate([
         { $match: leadMatch },
         { $unwind: "$opBookings" },
-        { $match: { "opBookings.status": "booked", "opBookings.createdAt": dateFilter } },
+        { $match: { "opBookings.status": "booked", "opBookings.date": dateFilter } },
         { $group: { _id: "$_id" } },
         { $count: "c" },
       ]),
@@ -2193,7 +2193,7 @@ const getAdminDashboardV2 = async (req, res) => {
             "opBookings.status": "done",
             $or: [
               { "opBookings.doneDate": dateFilter },
-              { "opBookings.doneDate": { $exists: false }, "opBookings.updatedAt": dateFilter },
+              { "opBookings.doneDate": { $exists: false }, "opBookings.date": dateFilter },
             ],
           },
         },
@@ -2203,7 +2203,7 @@ const getAdminDashboardV2 = async (req, res) => {
       Lead.aggregate([
         { $match: leadMatch },
         { $unwind: "$ipBookings" },
-        { $match: { "ipBookings.status": "booked", "ipBookings.createdAt": dateFilter } },
+        { $match: { "ipBookings.status": "booked", "ipBookings.date": dateFilter } },
         { $group: { _id: "$_id" } },
         { $count: "c" },
       ]),
@@ -2215,7 +2215,7 @@ const getAdminDashboardV2 = async (req, res) => {
             "ipBookings.status": "done",
             $or: [
               { "ipBookings.doneDate": dateFilter },
-              { "ipBookings.doneDate": { $exists: false }, "ipBookings.updatedAt": dateFilter },
+              { "ipBookings.doneDate": { $exists: false }, "ipBookings.date": dateFilter },
             ],
           },
         },
@@ -2244,7 +2244,7 @@ const getAdminDashboardV2 = async (req, res) => {
       Lead.aggregate([
         { $match: leadMatch },
         { $unwind: "$diagnosticBookings" },
-        { $match: { "diagnosticBookings.status": "booked", "diagnosticBookings.createdAt": dateFilter } },
+        { $match: { "diagnosticBookings.status": "booked", "diagnosticBookings.date": dateFilter } },
         { $group: { _id: "$_id" } },
         { $count: "c" },
       ]),
@@ -2256,7 +2256,7 @@ const getAdminDashboardV2 = async (req, res) => {
             "diagnosticBookings.status": "done",
             $or: [
               { "diagnosticBookings.doneDate": dateFilter },
-              { "diagnosticBookings.doneDate": { $exists: false }, "diagnosticBookings.updatedAt": dateFilter },
+              { "diagnosticBookings.doneDate": { $exists: false }, "diagnosticBookings.date": dateFilter },
             ],
           },
         },

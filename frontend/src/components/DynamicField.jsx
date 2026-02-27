@@ -2,6 +2,61 @@ import React from "react";
 import { Input, Select, DatePicker, TimePicker, Button, Divider, Space } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+
+dayjs.extend(customParseFormat);
+
+/**
+ * Try to parse a date string in many formats.
+ * Handles DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, ISO, Excel serial numbers, etc.
+ * Returns a valid dayjs object or null.
+ */
+export const smartParseDayjs = (raw) => {
+    if (!raw) return null;
+    // Already a dayjs object
+    if (dayjs.isDayjs(raw) && raw.isValid()) return raw;
+
+    const s = String(raw).trim();
+    if (!s) return null;
+
+    // Excel serial number (e.g. "46056.00011574074" or 46056)
+    const num = Number(s);
+    if (!isNaN(num) && num > 25000 && num < 100000) {
+        // Excel epoch: Dec 30, 1899 (accounting for Lotus 123 bug)
+        const epochMs = new Date(1899, 11, 30).getTime();
+        const d = dayjs(new Date(epochMs + num * 86400000));
+        if (d.isValid()) return d;
+    }
+
+    // Try common formats in order of likelihood
+    const formats = [
+        "DD/MM/YYYY",
+        "DD-MM-YYYY",
+        "DD.MM.YYYY",
+        "DD/MM/YYYY HH:mm:ss",
+        "DD-MM-YYYY HH:mm:ss",
+        "DD/MM/YYYY HH:mm",
+        "DD-MM-YYYY HH:mm",
+        "YYYY-MM-DD",
+        "YYYY-MM-DD HH:mm:ss",
+        "YYYY-MM-DDTHH:mm:ss",
+        "YYYY-MM-DDTHH:mm:ss.SSSZ",
+        "MM/DD/YYYY",
+        "D/M/YYYY",
+        "D-M-YYYY",
+    ];
+
+    for (const fmt of formats) {
+        const d = dayjs(s, fmt, true); // strict mode
+        if (d.isValid()) return d;
+    }
+
+    // Last resort: let dayjs try native parsing (handles ISO strings)
+    const fallback = dayjs(s);
+    if (fallback.isValid()) return fallback;
+
+    return null;
+};
 
 // Dynamic field renderer component
 export const DynamicField = ({ field, value, onChange, error, onAddOption, disabled }) => {
@@ -74,9 +129,10 @@ export const DynamicField = ({ field, value, onChange, error, onAddOption, disab
             case "date":
                 return (
                     <DatePicker
-                        value={value ? dayjs(value) : null}
+                        value={value ? smartParseDayjs(value) : null}
                         onChange={(d) => handleChange(d ? d.format("YYYY-MM-DD") : "")}
                         className="w-full"
+                        format="DD/MM/YYYY"
                         status={error ? "error" : undefined}
                         disabled={disabled}
                     />

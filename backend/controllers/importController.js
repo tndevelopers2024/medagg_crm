@@ -9,7 +9,7 @@ const { safeEmit, room } = require("../utils/socket");
 const normalizePhone = (raw) => (String(raw || "")).replace(/\D/g, "");
 const isValidPhone = (raw) => {
   const d = normalizePhone(raw);
-  return d.length >= 7 && d.length <= 15;
+  return d.length >= 7 && d.length <= 30;
 };
 
 const makeLeadId = (prefix = "import") =>
@@ -96,6 +96,21 @@ const parseDate = (raw) => {
   if (dmyDot) {
     const result = buildDate(dmyDot[1], dmyDot[2], dmyDot[3], timePart);
     if (result) return result;
+  }
+
+  // YYYY-MM-DD (ISO-like date-only format)
+  const ymdDash = datePart.match(/^(\d{4})-(0?\d{1,2})-(0?\d{1,2})$/);
+  if (ymdDash) {
+    const result = buildDate(ymdDash[3], ymdDash[2], ymdDash[1], timePart);
+    if (result) return result;
+  }
+
+  // Excel serial number as STRING (e.g. "46056.00011574074" from TelCRM exports)
+  const num = Number(s);
+  if (!isNaN(num) && num > 25000 && num < 100000) {
+    const excelEpoch = new Date(1899, 11, 30);
+    const d = new Date(excelEpoch.getTime() + num * 86400000);
+    return sanitize(d);
   }
 
   // Last-resort: try native parse (handles ISO, RFC 2822, etc.)
@@ -197,6 +212,7 @@ const importLeads = async (req, res) => {
         const ipdData = {};
         let sharedHospital = ""; // hospital applies to both OPD and IPD
         let rating = 0;
+        let followUpAt = null;
 
         for (const [csvHeader, mapping] of Object.entries(mappings)) {
           const rawVal = row[csvHeader];
@@ -220,7 +236,9 @@ const importLeads = async (req, res) => {
             else if (targetField === "hospital") sharedHospital = val;
             else if (targetField === "rating") rating = Number(val) || 0;
             else if (targetField === "lastCallOutcome") notes = notes ? `${notes} | Outcome: ${val}` : `Outcome: ${val}`;
-            else if (targetField === "followUpAt") { /* stored separately if needed */ }
+            else if (targetField === "followUpAt") {
+              try { followUpAt = parseDate(rawVal); } catch { followUpAt = null; }
+            }
             else if (targetField === "createdTime") {
               try {
                 createdTime = parseDate(rawVal);
@@ -251,7 +269,25 @@ const importLeads = async (req, res) => {
               if (parsed) ipdData.date = parsed;
             }
           } else if (targetType === "fieldData" && targetField) {
-            customFields.push({ name: targetField, values: [val] });
+            // Normalize date values if the field name suggests a date
+            const isDateField = /date|time|created|booked|follow/i.test(targetField);
+            if (isDateField) {
+              try {
+                const parsed = parseDate(rawVal);
+                if (parsed) {
+                  const dd = String(parsed.getDate()).padStart(2, '0');
+                  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+                  const yyyy = parsed.getFullYear();
+                  customFields.push({ name: targetField, values: [`${dd}/${mm}/${yyyy}`] });
+                } else {
+                  customFields.push({ name: targetField, values: [val] });
+                }
+              } catch {
+                customFields.push({ name: targetField, values: [val] });
+              }
+            } else {
+              customFields.push({ name: targetField, values: [val] });
+            }
           }
         }
 
@@ -330,6 +366,18 @@ const importLeads = async (req, res) => {
           }]
           : [];
 
+        // Extract call_later_date from customFields to set followUpAt if not already set
+        if (!followUpAt) {
+          const callLaterField = customFields.find(cf =>
+            /call_later_date|call_later|calllater/i.test(cf.name)
+          );
+          if (callLaterField && callLaterField.values && callLaterField.values[0]) {
+            try {
+              followUpAt = parseDate(callLaterField.values[0]);
+            } catch { /* ignore parse errors */ }
+          }
+        }
+
         let doc;
         try {
           doc = await Lead.create({
@@ -345,6 +393,7 @@ const importLeads = async (req, res) => {
             platform: defaultPlatform || "telcrm",
             assignedTo: resolvedCallerId,
             campaignId: resolvedCampaignId,
+            followUpAt: (followUpAt instanceof Date && !isNaN(followUpAt)) ? followUpAt : null,
             ...(opBookingEntry.length > 0 ? { opBookings: opBookingEntry } : {}),
             ...(ipBookingEntry.length > 0 ? { ipBookings: ipBookingEntry } : {}),
           });

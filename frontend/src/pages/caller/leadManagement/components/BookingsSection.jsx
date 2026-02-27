@@ -11,6 +11,7 @@ import toast from "react-hot-toast";
 import { fmtDate, readField } from "../utils/helpers";
 import { Input, Select, Textarea } from "./FormControls";
 import dayjs from "dayjs";
+import { smartParseDayjs } from "../../../../components/DynamicField";
 
 const statusBadge = (s) => {
   const map = {
@@ -264,7 +265,7 @@ const DynamicForm = ({ fields, state, onChange, saving, isEditing, onSubmit, onC
                   {label} {field.isRequired && <span className="text-red-500">*</span>}
                 </label>
                 <DatePicker
-                  value={val ? dayjs(val) : null}
+                  value={val ? smartParseDayjs(val) : null}
                   onChange={(d) => onChange(key, d ? d.format("YYYY-MM-DD") : "")}
                   className="w-full"
                   format="DD/MM/YYYY"

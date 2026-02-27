@@ -1,6 +1,6 @@
 import React from "react";
-import { Progress, Statistic, Row, Col, Card, Table, Button, Typography, Alert } from "antd";
-import { DownloadOutlined, CheckCircleOutlined } from "@ant-design/icons";
+import { Spin, Statistic, Row, Col, Card, Table, Button, Typography, Alert } from "antd";
+import { DownloadOutlined, CheckCircleOutlined, LoadingOutlined } from "@ant-design/icons";
 import * as XLSX from "xlsx";
 
 const { Text } = Typography;
@@ -17,7 +17,7 @@ export default function StepResults({ result, loading }) {
   if (loading) {
     return (
       <div className="flex flex-col items-center py-16 space-y-4">
-        <Progress type="circle" percent={99} status="active" />
+        <Spin indicator={<LoadingOutlined style={{ fontSize: 48 }} spin />} />
         <Text className="text-gray-500">Importing leads, please wait…</Text>
       </div>
     );

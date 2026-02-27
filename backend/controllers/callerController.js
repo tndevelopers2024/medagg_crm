@@ -677,7 +677,7 @@ const getMyStats = async (req, res) => {
     const opdBookedAgg = Lead.aggregate([
       { $match: { assignedTo: callerId } },
       { $unwind: "$opBookings" },
-      { $match: { "opBookings.createdAt": { $gte: start, $lte: end } } },
+      { $match: { "opBookings.date": { $gte: start, $lte: end } } },
       { $count: "count" },
     ]);
 
@@ -691,7 +691,7 @@ const getMyStats = async (req, res) => {
             { "opBookings.doneDate": { $gte: start, $lte: end } },
             {
               "opBookings.doneDate": { $exists: false },
-              "opBookings.updatedAt": { $gte: start, $lte: end },
+              "opBookings.date": { $gte: start, $lte: end },
             },
           ],
         },
@@ -709,7 +709,7 @@ const getMyStats = async (req, res) => {
             { "ipBookings.doneDate": { $gte: start, $lte: end } },
             {
               "ipBookings.doneDate": { $exists: false },
-              "ipBookings.updatedAt": { $gte: start, $lte: end },
+              "ipBookings.date": { $gte: start, $lte: end },
             },
           ],
         },
@@ -826,7 +826,7 @@ const getDashboardStats = async (req, res) => {
     const opdBookedToday = await Lead.aggregate([
       { $match: { assignedTo: callerId } },
       { $unwind: "$opBookings" },
-      { $match: { "opBookings.createdAt": { $gte: todayStart, $lte: todayEnd } } },
+      { $match: { "opBookings.date": { $gte: todayStart, $lte: todayEnd } } },
       { $count: "count" }
     ]);
 
@@ -838,7 +838,7 @@ const getDashboardStats = async (req, res) => {
           "opBookings.status": "done",
           $or: [
             { "opBookings.doneDate": { $gte: todayStart, $lte: todayEnd } },
-            { "opBookings.doneDate": { $exists: false }, "opBookings.updatedAt": { $gte: todayStart, $lte: todayEnd } }
+            { "opBookings.doneDate": { $exists: false }, "opBookings.date": { $gte: todayStart, $lte: todayEnd } }
           ]
         }
       },
@@ -848,7 +848,7 @@ const getDashboardStats = async (req, res) => {
     const ipdBookedToday = await Lead.aggregate([
       { $match: { assignedTo: callerId } },
       { $unwind: "$ipBookings" },
-      { $match: { "ipBookings.createdAt": { $gte: todayStart, $lte: todayEnd } } },
+      { $match: { "ipBookings.date": { $gte: todayStart, $lte: todayEnd } } },
       { $count: "count" }
     ]);
 
@@ -860,7 +860,7 @@ const getDashboardStats = async (req, res) => {
           "ipBookings.status": "done",
           $or: [
             { "ipBookings.doneDate": { $gte: todayStart, $lte: todayEnd } },
-            { "ipBookings.doneDate": { $exists: false }, "ipBookings.updatedAt": { $gte: todayStart, $lte: todayEnd } }
+            { "ipBookings.doneDate": { $exists: false }, "ipBookings.date": { $gte: todayStart, $lte: todayEnd } }
           ]
         }
       },
@@ -870,7 +870,7 @@ const getDashboardStats = async (req, res) => {
     const diagnosticBookedToday = await Lead.aggregate([
       { $match: { assignedTo: callerId } },
       { $unwind: "$diagnosticBookings" },
-      { $match: { "diagnosticBookings.createdAt": { $gte: todayStart, $lte: todayEnd } } },
+      { $match: { "diagnosticBookings.date": { $gte: todayStart, $lte: todayEnd } } },
       { $count: "count" }
     ]);
 
@@ -882,7 +882,7 @@ const getDashboardStats = async (req, res) => {
           "diagnosticBookings.status": "done",
           $or: [
             { "diagnosticBookings.doneDate": { $gte: todayStart, $lte: todayEnd } },
-            { "diagnosticBookings.doneDate": { $exists: false }, "diagnosticBookings.updatedAt": { $gte: todayStart, $lte: todayEnd } }
+            { "diagnosticBookings.doneDate": { $exists: false }, "diagnosticBookings.date": { $gte: todayStart, $lte: todayEnd } }
           ]
         }
       },
