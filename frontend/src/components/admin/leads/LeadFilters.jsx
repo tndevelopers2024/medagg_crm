@@ -92,6 +92,7 @@ const LeadFilters = ({
     caller, setCaller, callerOptions,
     status, setStatus, statusOptions,
     followup, setFollowup, followupOptions,
+    followupFrom, setFollowupFrom, followupTo, setFollowupTo,
     opd, setOpd, opdOptions,
     ipd, setIpd, ipdOptions,
     diag, setDiag, diagOptions,
@@ -366,6 +367,22 @@ const LeadFilters = ({
                         return (
                             <ConditionPill key="followup" label="Call Later" operator={operators['followup'] || 'is'} onOperatorChange={(op) => onOperatorChange?.('followup', op)} onRemove={() => removeFilter('followup')}>
                                 <ValueSelect value={followup} onChange={setFollowup} options={followupOptions} />
+                                {followup === 'Custom' && (
+                                    <DatePicker.RangePicker
+                                        size="small"
+                                        variant="borderless"
+                                        format="DD/MM/YYYY"
+                                        value={[
+                                            followupFrom ? dayjs(followupFrom) : null,
+                                            followupTo ? dayjs(followupTo) : null,
+                                        ]}
+                                        onChange={(dates) => {
+                                            setFollowupFrom(dates?.[0]?.format('YYYY-MM-DD') || '');
+                                            setFollowupTo(dates?.[1]?.format('YYYY-MM-DD') || '');
+                                        }}
+                                        style={{ minWidth: 200 }}
+                                    />
+                                )}
                             </ConditionPill>
                         );
                     }

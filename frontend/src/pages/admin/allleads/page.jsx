@@ -417,6 +417,7 @@ export default function LeadsManagement() {
           caller={filters.callerFilter} setCaller={filters.setCallerFilter} callerOptions={filters.callerOptions}
           status={filters.leadStatus} setStatus={filters.setLeadStatus} statusOptions={filters.leadStatusOptions}
           followup={filters.followupFilter} setFollowup={filters.setFollowupFilter} followupOptions={filters.followupOptions}
+          followupFrom={filters.followupFrom} setFollowupFrom={filters.setFollowupFrom} followupTo={filters.followupTo} setFollowupTo={filters.setFollowupTo}
           opd={filters.opdStatus} setOpd={filters.setOpdStatus} opdOptions={filters.opdOptions}
           ipd={filters.ipdStatus} setIpd={filters.setIpdStatus} ipdOptions={filters.ipdOptions}
           diag={filters.diagnostics} setDiag={filters.setDiagnostics} diagOptions={filters.diagOptions}
@@ -488,7 +489,7 @@ export default function LeadsManagement() {
             pageSize={pageSize}
             setPageSize={setPageSize}
             filteredCount={serverMeta.total}
-            
+
           />
 
           {/* Location Assign Button */}

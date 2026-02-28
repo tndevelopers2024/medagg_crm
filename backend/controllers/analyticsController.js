@@ -40,8 +40,13 @@ const buildFilterQuery = async (filters = []) => {
 
             case "followUp": {
                 const now = new Date();
-                const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-                const dayEnd = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+                const dayBoundsIST = (d) => {
+                    const dt = new Date(d);
+                    const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+                    istDate.setUTCHours(0, 0, 0, 0);
+                    const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+                    return { start, end: new Date(start.getTime() + 86399999) };
+                };
 
                 if (value === "Yes" || value === "Scheduled") {
                     query.followUpAt = { $gt: now };
@@ -53,15 +58,29 @@ const buildFilterQuery = async (filters = []) => {
                         ],
                     });
                 } else if (value === "Today") {
-                    query.followUpAt = { $gte: dayStart(now), $lte: dayEnd(now) };
+                    const { start, end } = dayBoundsIST(now);
+                    query.followUpAt = { $gte: start, $lte: end };
                 } else if (value === "Tomorrow") {
-                    const tmr = new Date(now); tmr.setDate(tmr.getDate() + 1);
-                    query.followUpAt = { $gte: dayStart(tmr), $lte: dayEnd(tmr) };
+                    const tmr = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+                    const { start, end } = dayBoundsIST(tmr);
+                    query.followUpAt = { $gte: start, $lte: end };
                 } else if (value === "This Week") {
-                    const weekEnd = new Date(now); weekEnd.setDate(weekEnd.getDate() + 7);
-                    query.followUpAt = { $gte: now, $lte: weekEnd };
+                    const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+                    const { end: weekEndBound } = dayBoundsIST(weekEnd);
+                    query.followUpAt = { $gte: now, $lte: weekEndBound };
                 } else if (value === "Overdue") {
                     query.followUpAt = { $lt: now, $ne: null };
+                } else if (value === "Custom") {
+                    if (from && to) {
+                        query.followUpAt = {
+                            $gte: dayBoundsIST(new Date(`${from}T00:00:00+05:30`)).start,
+                            $lte: dayBoundsIST(new Date(`${to}T00:00:00+05:30`)).end,
+                        };
+                    } else if (from) {
+                        query.followUpAt = { $gte: dayBoundsIST(new Date(`${from}T00:00:00+05:30`)).start };
+                    } else if (to) {
+                        query.followUpAt = { $lte: dayBoundsIST(new Date(`${to}T00:00:00+05:30`)).end };
+                    }
                 }
                 break;
             }

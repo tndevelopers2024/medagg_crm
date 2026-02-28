@@ -29,6 +29,10 @@ export function buildQueryParams(filters, page, pageSize) {
   }
   if (filters.followupFilter && filters.followupFilter !== "All") {
     params.followup = filters.followupFilter;
+    if (filters.followupFilter === "Custom") {
+      if (filters.followupFrom) params.followupFrom = filters.followupFrom;
+      if (filters.followupTo) params.followupTo = filters.followupTo;
+    }
   }
   if (filters.campaignFilter && filters.campaignFilter.length > 0) {
     params.campaignId = filters.campaignFilter.join(',');
@@ -219,7 +223,7 @@ export default function useLeadsData({ isAdmin, effectiveIsCaller, authLoading, 
     campaignMap,
     reverseCampaignMap,
     loading,
-    setLoading: () => {}, // no-op, React Query manages loading
+    setLoading: () => { }, // no-op, React Query manages loading
     fetchFn: effectiveIsCaller ? "assigned" : "all",
     serverMeta,
     filterMeta,

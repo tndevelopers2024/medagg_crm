@@ -86,59 +86,69 @@ exports.exportLeads = async (req, res) => {
         // Date range — Lead model uses createdTime
         if (filters.dateMode && filters.dateMode !== "" && filters.dateMode !== "All Time") {
             const now = new Date();
-            const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-            const dayEnd = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+            const dayBoundsIST = (d) => {
+                const dt = new Date(d);
+                const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+                istDate.setUTCHours(0, 0, 0, 0);
+                const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+                return { start, end: new Date(start.getTime() + 86399999) };
+            };
 
             if (filters.dateMode === 'Today') {
-                query.createdTime = { $gte: dayStart(now), $lte: dayEnd(now) };
+                const { start, end } = dayBoundsIST(now);
+                query.createdTime = { $gte: start, $lte: end };
             } else if (filters.dateMode === 'Yesterday') {
-                const y = new Date(now);
-                y.setDate(y.getDate() - 1);
-                query.createdTime = { $gte: dayStart(y), $lte: dayEnd(y) };
+                const y = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                const { start, end } = dayBoundsIST(y);
+                query.createdTime = { $gte: start, $lte: end };
             } else if (filters.dateMode === 'This Week' || filters.dateMode === '7d') {
-                const d = new Date(now);
-                d.setDate(d.getDate() - 6);
-                query.createdTime = { $gte: dayStart(d), $lte: dayEnd(now) };
+                const d = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
+                query.createdTime = { $gte: dayBoundsIST(d).start, $lte: dayBoundsIST(now).end };
             } else if (filters.dateMode === 'This Month' || filters.dateMode === '30d') {
-                const d = new Date(now);
-                d.setDate(d.getDate() - 29);
-                query.createdTime = { $gte: dayStart(d), $lte: dayEnd(now) };
+                const d = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000);
+                query.createdTime = { $gte: dayBoundsIST(d).start, $lte: dayBoundsIST(now).end };
             } else if (filters.dateMode === 'Custom') {
                 if (filters.customFrom && filters.customTo) {
                     query.createdTime = {
-                        $gte: new Date(`${filters.customFrom}T00:00:00`),
-                        $lte: new Date(`${filters.customTo}T23:59:59.999`),
+                        $gte: dayBoundsIST(new Date(`${filters.customFrom}T00:00:00+05:30`)).start,
+                        $lte: dayBoundsIST(new Date(`${filters.customTo}T00:00:00+05:30`)).end,
                     };
                 } else if (filters.customFrom) {
-                    query.createdTime = { $gte: new Date(`${filters.customFrom}T00:00:00`) };
+                    query.createdTime = { $gte: dayBoundsIST(new Date(`${filters.customFrom}T00:00:00+05:30`)).start };
                 } else if (filters.customTo) {
-                    query.createdTime = { $lte: new Date(`${filters.customTo}T23:59:59.999`) };
+                    query.createdTime = { $lte: dayBoundsIST(new Date(`${filters.customTo}T00:00:00+05:30`)).end };
                 }
             } else if (filters.dateMode === 'Tomorrow') {
-                const tmr = new Date(now);
-                tmr.setDate(tmr.getDate() + 1);
-                query.createdTime = { $gte: dayStart(tmr), $lte: dayEnd(tmr) };
+                const tmr = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+                const { start, end } = dayBoundsIST(tmr);
+                query.createdTime = { $gte: start, $lte: end };
             }
         }
 
         // Follow-up filter
         if (filters.followupFilter && filters.followupFilter !== "All") {
             const now = new Date();
-            const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-            const dayEnd = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+            const dayBoundsIST = (d) => {
+                const dt = new Date(d);
+                const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+                istDate.setUTCHours(0, 0, 0, 0);
+                const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+                return { start, end: new Date(start.getTime() + 86399999) };
+            };
 
             if (filters.followupFilter === 'Scheduled') {
                 query.followUpAt = { $gt: now };
             } else if (filters.followupFilter === 'Today') {
-                query.followUpAt = { $gte: dayStart(now), $lte: dayEnd(now) };
+                const { start, end } = dayBoundsIST(now);
+                query.followUpAt = { $gte: start, $lte: end };
             } else if (filters.followupFilter === 'Tomorrow') {
-                const tmr = new Date(now);
-                tmr.setDate(tmr.getDate() + 1);
-                query.followUpAt = { $gte: dayStart(tmr), $lte: dayEnd(tmr) };
+                const tmr = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+                const { start, end } = dayBoundsIST(tmr);
+                query.followUpAt = { $gte: start, $lte: end };
             } else if (filters.followupFilter === 'This Week') {
-                const weekEnd = new Date(now);
-                weekEnd.setDate(weekEnd.getDate() + 7);
-                query.followUpAt = { $gte: now, $lte: weekEnd };
+                const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+                const { end: weekEndBound } = dayBoundsIST(weekEnd);
+                query.followUpAt = { $gte: now, $lte: weekEndBound };
             } else if (filters.followupFilter === 'Overdue') {
                 query.followUpAt = { $lt: now, $ne: null };
             } else if (filters.followupFilter === 'Not Scheduled') {
@@ -146,6 +156,17 @@ exports.exportLeads = async (req, res) => {
                 query.$and.push({
                     $or: [{ followUpAt: null }, { followUpAt: { $exists: false } }],
                 });
+            } else if (filters.followupFilter === 'Custom') {
+                if (filters.followupFrom && filters.followupTo) {
+                    query.followUpAt = {
+                        $gte: dayBoundsIST(new Date(`${filters.followupFrom}T00:00:00+05:30`)).start,
+                        $lte: dayBoundsIST(new Date(`${filters.followupTo}T00:00:00+05:30`)).end,
+                    };
+                } else if (filters.followupFrom) {
+                    query.followUpAt = { $gte: dayBoundsIST(new Date(`${filters.followupFrom}T00:00:00+05:30`)).start };
+                } else if (filters.followupTo) {
+                    query.followUpAt = { $lte: dayBoundsIST(new Date(`${filters.followupTo}T00:00:00+05:30`)).end };
+                }
             }
         }
 

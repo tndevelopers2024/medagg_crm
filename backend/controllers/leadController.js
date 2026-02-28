@@ -22,7 +22,7 @@ const buildLeadFilter = async (query) => {
   const filter = {};
   const {
     status, assignedTo, source, campaignId,
-    dateMode, from, to, followup, q,
+    dateMode, from, to, followup, followupFrom, followupTo, q,
     callStatus, callCountFrom, callCountTo,
     opdStatus, ipdStatus, diagnostics,
     statusOp, sourceOp, assignedToOp, campaignOp,
@@ -229,6 +229,17 @@ const buildLeadFilter = async (query) => {
         filter.$and.push({
           $or: [{ followUpAt: null }, { followUpAt: { $exists: false } }],
         });
+      }
+    } else if (followup === 'Custom') {
+      if (followupFrom && followupTo) {
+        filter.followUpAt = {
+          $gte: dayBoundsIST(new Date(`${followupFrom}T00:00:00+05:30`)).start,
+          $lte: dayBoundsIST(new Date(`${followupTo}T00:00:00+05:30`)).end,
+        };
+      } else if (followupFrom) {
+        filter.followUpAt = { $gte: dayBoundsIST(new Date(`${followupFrom}T00:00:00+05:30`)).start };
+      } else if (followupTo) {
+        filter.followUpAt = { $lte: dayBoundsIST(new Date(`${followupTo}T00:00:00+05:30`)).end };
       }
     }
   }
@@ -1009,8 +1020,10 @@ const getAllLeads = async (req, res) => {
 const getTodayLeads = async (_req, res) => {
   try {
     const today = new Date();
-    const start = new Date(today.setHours(0, 0, 0, 0));
-    const end = new Date(today.setHours(23, 59, 59, 999));
+    const istDate = new Date(today.getTime() + (5.5 * 60 * 60 * 1000));
+    istDate.setUTCHours(0, 0, 0, 0);
+    const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+    const end = new Date(start.getTime() + 86399999);
 
     const leads = await Lead.find({ createdTime: { $gte: start, $lte: end } });
     res.status(200).json({

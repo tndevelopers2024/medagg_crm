@@ -10,6 +10,8 @@ const DEFAULTS = {
   caller: [],
   status: [],
   followup: "All",
+  followupFrom: "",
+  followupTo: "",
   opd: "OPD Status",
   ipd: "IPD Status",
   diag: "Diagnostics",
@@ -18,7 +20,7 @@ const DEFAULTS = {
 };
 
 // All URL param keys owned by this hook — used to avoid overwriting analytics params
-const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'followup', 'opd', 'ipd', 'diag', 'campaign', 'search', 'ops', 'cf'];
+const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'followup', 'followupFrom', 'followupTo', 'opd', 'ipd', 'diag', 'campaign', 'search', 'ops', 'cf'];
 
 // Resolve legacy `view` param and special `date` values into concrete filter state
 function resolveInitialParams(searchParams) {
@@ -94,6 +96,8 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     Array.isArray(initialParams.status) ? initialParams.status : DEFAULTS.status
   );
   const [followupFilter, setFollowupFilter] = useState(initialParams.followup || DEFAULTS.followup);
+  const [followupFrom, setFollowupFrom] = useState(initialParams.followupFrom || DEFAULTS.followupFrom);
+  const [followupTo, setFollowupTo] = useState(initialParams.followupTo || DEFAULTS.followupTo);
   const [opdStatus, setOpdStatus] = useState(initialParams.opd || DEFAULTS.opd);
   const [ipdStatus, setIpdStatus] = useState(initialParams.ipd || DEFAULTS.ipd);
   const [diagnostics, setDiagnostics] = useState(initialParams.diag || DEFAULTS.diag);
@@ -153,6 +157,8 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if (callerFilter.length > 0) params.caller = callerFilter.join(',');
     if (leadStatus.length > 0) params.status = leadStatus.join(',');
     if (followupFilter !== DEFAULTS.followup) params.followup = followupFilter;
+    if (followupFrom !== DEFAULTS.followupFrom) params.followupFrom = followupFrom;
+    if (followupTo !== DEFAULTS.followupTo) params.followupTo = followupTo;
     if (opdStatus !== DEFAULTS.opd) params.opd = opdStatus;
     if (ipdStatus !== DEFAULTS.ipd) params.ipd = ipdStatus;
     if (diagnostics !== DEFAULTS.diag) params.diag = diagnostics;
@@ -190,7 +196,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     }
   }, [
     dateMode, customFrom, customTo, source, callerFilter, leadStatus,
-    followupFilter, opdStatus, ipdStatus, diagnostics, campaignFilter, search,
+    followupFilter, followupFrom, followupTo, opdStatus, ipdStatus, diagnostics, campaignFilter, search,
     filterOperators, customFieldFilters,
     setSearchParams, searchParams
   ]);
@@ -215,6 +221,8 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
       setLeadStatus(params.status || []);
     }
     if ((params.followup || "All") !== followupFilter) setFollowupFilter(params.followup || "All");
+    if ((params.followupFrom || "") !== followupFrom) setFollowupFrom(params.followupFrom || "");
+    if ((params.followupTo || "") !== followupTo) setFollowupTo(params.followupTo || "");
     if ((params.opd || "OPD Status") !== opdStatus) setOpdStatus(params.opd || "OPD Status");
     if ((params.ipd || "IPD Status") !== ipdStatus) setIpdStatus(params.ipd || "IPD Status");
     if ((params.diag || "Diagnostics") !== diagnostics) setDiagnostics(params.diag || "Diagnostics");
@@ -238,6 +246,8 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     callerFilter,
     leadStatus,
     followupFilter,
+    followupFrom,
+    followupTo,
     opdStatus,
     ipdStatus,
     diagnostics,
@@ -247,7 +257,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     filterOperators,
   }), [
     dateMode, customFrom, customTo, source, callerFilter, leadStatus,
-    followupFilter, opdStatus, ipdStatus, diagnostics, campaignFilter, debouncedSearch,
+    followupFilter, followupFrom, followupTo, opdStatus, ipdStatus, diagnostics, campaignFilter, debouncedSearch,
     customFieldFilters, filterOperators,
   ]);
 
@@ -342,6 +352,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     { label: "This Week", value: "This Week" },
     { label: "Overdue", value: "Overdue" },
     { label: "Not Scheduled", value: "Not Scheduled" },
+    { label: "Custom", value: "Custom" },
     { label: "All", value: "All" },
   ], []);
 
@@ -357,6 +368,8 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     setCallerFilter([]);
     setLeadStatus([]);
     setFollowupFilter(DEFAULTS.followup);
+    setFollowupFrom(DEFAULTS.followupFrom);
+    setFollowupTo(DEFAULTS.followupTo);
     setOpdStatus(DEFAULTS.opd);
     setIpdStatus(DEFAULTS.ipd);
     setDiagnostics(DEFAULTS.diag);
@@ -376,6 +389,8 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     callerFilter, setCallerFilter,
     leadStatus, setLeadStatus,
     followupFilter, setFollowupFilter,
+    followupFrom, setFollowupFrom,
+    followupTo, setFollowupTo,
     opdStatus, setOpdStatus,
     ipdStatus, setIpdStatus,
     diagnostics, setDiagnostics,
