@@ -201,7 +201,7 @@ const syncCampaignLeads = async (req, res) => {
                     campaignId: campaign._id.toString(),
                     createdTime: raw.created_time || new Date(),
                     fieldData: raw.field_data,
-                    status: "new",
+                    status: "New Lead",
                     source: `${provider} Ads`,
                     assignedTo
                 });
@@ -328,7 +328,7 @@ const uploadLeads = async (req, res) => {
                         campaignId: id,
                         createdTime: new Date(),
                         fieldData,
-                        status: "new",
+                        status: "New Lead",
                         source: "Bulk Upload",
                     });
 
@@ -453,7 +453,7 @@ const bulkImportLeads = async (req, res) => {
             campaignId: campaignId,
             createdTime: new Date(),
             fieldData: lead.fieldData,
-            status: "new",
+            status: "New Lead",
             source: "Bulk Import",
             // Assignment logic could go here if callers are provided
             // For example, round-robin assignment or specific assignment

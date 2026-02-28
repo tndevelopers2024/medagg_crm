@@ -542,7 +542,7 @@ const logCall = async (req, res) => {
       if (outcome === "not_interested") lead.status = "not_interested";
       if (outcome === "converted") lead.status = "converted";
       if (["no_answer", "busy", "switched_off", "callback", "voicemail"].includes(outcome)) {
-        lead.status = lead.status === "new" ? "in_progress" : lead.status;
+        lead.status = ["new", "New Lead"].includes(lead.status) ? "in_progress" : lead.status;
       }
       if (prev !== lead.status) lead.lastStatusChangeAt = new Date();
     }

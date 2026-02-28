@@ -5,6 +5,7 @@ const mongoose = require("mongoose");
 const Lead = require("../models/Lead");
 const { safeEmit, room } = require("../utils/socket");
 const User = require("../models/User");
+const LeadStageConfig = require("../models/LeadStageConfig");
 const { getRoleIdByName } = require("../utils/roleHelpers");
 
 /* ---------- helpers ---------- */
@@ -31,7 +32,22 @@ const buildLeadFilter = async (query) => {
 
   // Status (case-insensitive, supports comma-separated multi-values)
   if (status) {
-    const statusValues = status.includes(',') ? status.split(',').filter(Boolean) : [status];
+    let statusValues = status.includes(',') ? status.split(',').filter(Boolean) : [status];
+
+    // Map stageName values (e.g. "new") to displayLabel (e.g. "New Lead")
+    // so old URLs and bookmarks still work
+    try {
+      const stages = await LeadStageConfig.find().select('stageName displayLabel').lean();
+      const stageMap = new Map();
+      stages.forEach(s => {
+        stageMap.set((s.stageName || '').toLowerCase(), s.displayLabel || s.stageName);
+      });
+      statusValues = statusValues.map(v => {
+        const mapped = stageMap.get(v.toLowerCase());
+        return mapped || v;
+      });
+    } catch (e) { /* ignore lookup errors, use raw values */ }
+
     const regexes = statusValues.map(s => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'));
     if (statusOp === 'is_not') {
       filter.status = { $nin: regexes };
@@ -839,7 +855,7 @@ function leadToSocket(doc) {
     id: String(doc._id),
     lead_id: doc.leadId,
     created_time: doc.createdTime,
-    status: doc.status || "new",
+    status: doc.status || "New Lead",
     assigned_to: doc.assignedTo || null,
 
     // keep original array for clients that parse field_data/fieldData
@@ -887,7 +903,7 @@ const intakeLead = async (req, res) => {
       createdTime: new Date(),
       fieldData,
       notes: concern || "",
-      status: "new",
+      status: "New Lead",
       assignedTo: null,
     });
 
@@ -2043,7 +2059,7 @@ const getCallerDetailStats = async (req, res) => {
         id: lead._id.toString(),
         name: nameField?.values?.[0] || "—",
         phone: phoneField?.values?.[0] || "—",
-        status: lead.status || "new",
+        status: lead.status || "New Lead",
         createdTime: lead.createdTime
       };
     });

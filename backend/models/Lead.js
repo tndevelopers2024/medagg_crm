@@ -54,7 +54,7 @@ const leadSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      default: "new",
+      default: "New Lead",
       // Enum removed to support dynamic stages from LeadStageConfig
     },
 

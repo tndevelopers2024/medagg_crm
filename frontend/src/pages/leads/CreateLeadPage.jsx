@@ -37,7 +37,7 @@ export default function CreateLeadPage() {
     // Additional fields not in dynamic config
     const [assignedTo, setAssignedTo] = useState("");
     const [campaignId, setCampaignId] = useState("");
-    const [status, setStatus] = useState("new");
+    const [status, setStatus] = useState("New Lead");
     const [notes, setNotes] = useState("");
 
     const handleLeadFieldChange = (fieldName, value) => {
@@ -231,7 +231,7 @@ export default function CreateLeadPage() {
                                     {leadStages
                                         .filter((s) => s.stageCategory === "initial" || s.stageCategory === "active")
                                         .map((stage) => (
-                                            <option key={stage.stageName} value={stage.stageName}>
+                                            <option key={stage.stageName} value={stage.displayLabel || stage.stageName}>
                                                 {stage.displayLabel}
                                             </option>
                                         ))}

@@ -1,4 +1,5 @@
 const Lead = require("../models/Lead");
+const LeadStageConfig = require("../models/LeadStageConfig");
 const { Parser } = require("json2csv");
 
 // Export leads to CSV
@@ -28,7 +29,21 @@ exports.exportLeads = async (req, res) => {
 
         // Status (case-insensitive, supports array)
         if (filters.leadStatus && (Array.isArray(filters.leadStatus) ? filters.leadStatus.length > 0 : filters.leadStatus !== "Lead Status")) {
-            const statusValues = Array.isArray(filters.leadStatus) ? filters.leadStatus : [filters.leadStatus];
+            let statusValues = Array.isArray(filters.leadStatus) ? filters.leadStatus : [filters.leadStatus];
+
+            // Map stageName values (e.g. "new") to displayLabel (e.g. "New Lead")
+            try {
+                const stages = await LeadStageConfig.find().select('stageName displayLabel').lean();
+                const stageMap = new Map();
+                stages.forEach(s => {
+                    stageMap.set((s.stageName || '').toLowerCase(), s.displayLabel || s.stageName);
+                });
+                statusValues = statusValues.map(v => {
+                    const mapped = stageMap.get(v.toLowerCase());
+                    return mapped || v;
+                });
+            } catch (e) { /* ignore */ }
+
             const regexes = statusValues.map(s => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'));
             query.status = regexes.length === 1 ? { $regex: regexes[0] } : { $in: regexes };
         }

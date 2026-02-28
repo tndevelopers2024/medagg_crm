@@ -12,6 +12,34 @@ const isValidPhone = (raw) => {
   return d.length >= 7 && d.length <= 30;
 };
 
+/**
+ * Ensure a phone number has the +91 country code prefix.
+ * Handles: "9876543210" → "+919876543210", "919876543210" → "+919876543210",
+ * "09876543210" → "+919876543210", "+919876543210" → "+919876543210"
+ */
+const normalizePhoneWithCode = (raw) => {
+  // Strip everything except digits and leading +
+  let s = String(raw || "").trim();
+  const hasPlus = s.startsWith("+");
+  const digits = s.replace(/\D/g, "");
+  if (!digits) return s;
+
+  // Already has +91
+  if (hasPlus && digits.startsWith("91") && digits.length >= 12) return "+" + digits;
+
+  // 12+ digits starting with 91 (e.g. 919876543210)
+  if (digits.startsWith("91") && digits.length >= 12) return "+" + digits;
+
+  // 11 digits starting with 0 (e.g. 09876543210)
+  if (digits.startsWith("0") && digits.length === 11) return "+91" + digits.slice(1);
+
+  // 10 digits (Indian local number)
+  if (digits.length === 10) return "+91" + digits;
+
+  // Fallback: just prepend +
+  return "+" + digits;
+};
+
 const makeLeadId = (prefix = "import") =>
   `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -144,7 +172,7 @@ const importLeads = async (req, res) => {
       rows = [],
       mappings = {},
       defaultCampaignId,
-      defaultStatus = "new",
+      defaultStatus = "New Lead",
       defaultPlatform = "telcrm",
       duplicateHandling = "skip",
     } = req.body;
@@ -303,7 +331,7 @@ const importLeads = async (req, res) => {
           continue;
         }
 
-        const normalizedPhone = normalizePhone(phone);
+        const normalizedPhone = normalizePhoneWithCode(phone);
 
         // 3. Build fieldData
         const fieldData = [];
@@ -314,12 +342,13 @@ const importLeads = async (req, res) => {
           fieldData.push(cf);
         }
 
-        // 4. Duplicate check
+        // 4. Duplicate check — match both +91 and digits-only formats
+        const digitsOnly = normalizedPhone.replace(/\D/g, "");
         const existingLead = await Lead.findOne({
           fieldData: {
             $elemMatch: {
               name: "phone_number",
-              values: { $in: [normalizedPhone] },
+              values: { $in: [normalizedPhone, digitsOnly] },
             },
           },
         }).lean();
@@ -388,7 +417,7 @@ const importLeads = async (req, res) => {
             fieldData,
             notes: notes || "",
             rating: rating || 0,
-            status: status || defaultStatus || "new",
+            status: status || defaultStatus || "New Lead",
             source: source || "",
             platform: defaultPlatform || "telcrm",
             assignedTo: resolvedCallerId,
@@ -498,4 +527,4 @@ const deleteMapping = async (req, res) => {
   }
 };
 
-module.exports = { importLeads, getMappings, saveMappings, deleteMapping, parseDate };
+module.exports = { importLeads, getMappings, saveMappings, deleteMapping, parseDate, normalizePhoneWithCode };

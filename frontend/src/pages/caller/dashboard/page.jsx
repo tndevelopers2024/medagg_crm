@@ -509,7 +509,7 @@ export default function CallersDashboard() {
                             sub={`${computed.todayNewLeads} today`}
                             icon={UserOutlined}
                             color="purple"
-                            onClick={() => navigate("/leads?date=today&status=new")}
+                            onClick={() => navigate("/leads?date=today&status=New Lead")}
                         />
                     </Col>
                     <Col xs={24} sm={12} md={8} lg={8} xl={4}>

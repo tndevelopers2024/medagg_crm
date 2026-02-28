@@ -332,7 +332,7 @@ export default function Dashboard() {
             onCardClick={(cardKey) => {
               const filterMap = {
                 todaysLeads: { dateMode: 'Today' },
-                pendingNewLeads: { leadStatus: 'new' },
+                pendingNewLeads: { leadStatus: 'New Lead' },
                 opBooked: { opdStatus: 'booked' },
                 opDone: { opdStatus: 'done' },
                 ipBooked: { ipdStatus: 'booked' },

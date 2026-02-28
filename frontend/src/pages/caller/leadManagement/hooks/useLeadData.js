@@ -32,7 +32,7 @@ export default function useLeadData(id, loadActivities) {
   }, [leadFields]);
 
   // Status
-  const [status, setStatus] = useState("new");
+  const [status, setStatus] = useState("New Lead");
   const [initialStatus, setInitialStatus] = useState(null);
   const [newBookingAdded, setNewBookingAdded] = useState(false);
   const [notes, setNotes] = useState("");
@@ -65,7 +65,7 @@ export default function useLeadData(id, loadActivities) {
     leadStages.forEach((stage) => {
       if (grouped[stage.stageCategory]) {
         grouped[stage.stageCategory].push({
-          value: stage.stageName,
+          value: stage.displayLabel || stage.stageName,
           label: stage.displayLabel,
           color: stage.color,
           category: stage.stageCategory,
@@ -169,8 +169,8 @@ export default function useLeadData(id, loadActivities) {
       const fieldDataObj = fieldDataToObject(detail.fieldData || []);
       setLeadData(fieldDataObj);
 
-      setStatus(detail?.status || "new");
-      setInitialStatus(detail?.status || "new");
+      setStatus(detail?.status || "New Lead");
+      setInitialStatus(detail?.status || "New Lead");
       setNotes(detail?.notes || "");
       setOpdBooked(
         ["yes", "true", "booked"].includes(

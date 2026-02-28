@@ -1,14 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import {
-  FiMessageCircle,
-  FiPlus,
-  FiEdit3,
-  FiTrash2,
-  FiSave,
-  FiChevronLeft,
-  FiGlobe,
-  FiUser,
-} from "react-icons/fi";
+import { FiMessageCircle, FiPlus, FiEdit3, FiTrash2, FiSave, FiChevronLeft, FiGlobe, FiUser, FiSearch } from "react-icons/fi";
 import toast from "react-hot-toast";
 import { Modal, Input, Button, List, Tag, Checkbox, Empty } from "antd";
 import {
@@ -56,6 +47,7 @@ export default function WhatsAppModal({
   const [message, setMessage] = useState("");
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Template form state
   const [view, setView] = useState(VIEW_MAIN);
@@ -165,6 +157,10 @@ export default function WhatsAppModal({
     setFormGlobal(false);
     setView(VIEW_FORM);
   };
+
+  const filteredTemplates = templates.filter((tpl) =>
+    tpl.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const openEditForm = (tpl) => {
     setEditingTemplate(tpl);
@@ -383,19 +379,28 @@ export default function WhatsAppModal({
           </Button>
         </div>
 
+        <Input
+          placeholder="Search templates..."
+          prefix={<FiSearch className="text-gray-400" />}
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          allowClear
+          className="mb-2"
+        />
+
         {loading ? (
           <div className="text-xs text-gray-400 py-2">
             Loading templates...
           </div>
-        ) : templates.length === 0 ? (
+        ) : filteredTemplates.length === 0 ? (
           <Empty
-            description="No templates yet. Create one to get started."
+            description={searchTerm ? "No templates match your search." : "No templates yet. Create one to get started."}
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
         ) : (
           <List
             size="small"
-            dataSource={templates}
+            dataSource={filteredTemplates}
             style={{ maxHeight: 160, overflowY: "auto" }}
             renderItem={(tpl) => {
               const fields = extractFields(tpl.body);

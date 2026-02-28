@@ -269,7 +269,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
 
   const leadStatusOptions = useMemo(() => {
     if (leadStages && leadStages.length > 0) {
-      return leadStages.map(stage => stage.stageName);
+      return leadStages.map(stage => stage.displayLabel || stage.stageName);
     }
     const statusField = fieldConfigs.find(f => f.fieldName === 'lead_status' || f.fieldName === 'status');
     if (statusField && statusField.options && statusField.options.length > 0) {

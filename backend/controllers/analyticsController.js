@@ -493,7 +493,7 @@ exports.getFilterOptions = async (req, res) => {
 
         // Get lead stages
         const leadStages = await LeadStageConfig.find({ active: true })
-            .select("stageName")
+            .select("stageName displayLabel")
             .lean();
 
         // Get field configs for custom fields
@@ -532,7 +532,7 @@ exports.getFilterOptions = async (req, res) => {
             success: true,
             data: {
                 callers: callers.map((c) => ({ id: c._id, name: c.name })),
-                leadStages: leadStages.map((s) => s.stageName),
+                leadStages: leadStages.map((s) => s.displayLabel || s.stageName),
                 fieldConfigs: allFieldConfigs.sort((a, b) => a.displayLabel.localeCompare(b.displayLabel)),
                 sources: sources.filter(Boolean),
             },

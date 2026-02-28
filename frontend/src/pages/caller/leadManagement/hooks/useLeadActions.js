@@ -150,9 +150,9 @@ export default function useLeadActions({
 
     const name = leadData.full_name || leadData.name || "Unknown";
     const statusLabel =
-      leadStages.find((s) => s.stageName === status)?.displayLabel ||
+      leadStages.find((s) => s.displayLabel === status || s.stageName === status)?.displayLabel ||
       status ||
-      "new";
+      "New Lead";
     const createdDate = lead.createdTime
       ? new Date(lead.createdTime).toLocaleString("en-IN", {
         hour: "2-digit",

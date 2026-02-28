@@ -307,6 +307,41 @@ httpServer.listen(PORT, "0.0.0.0", () => {
       console.error("[startup-backfill] error:", e.message);
     }
   }, 5000);
+
+  // ── Auto-backfill phone numbers with +91 (runs once on startup) ──
+  setTimeout(async () => {
+    try {
+      const { normalizePhoneWithCode } = require("./controllers/importController");
+      const leads = await Lead.find({
+        fieldData: {
+          $elemMatch: {
+            name: "phone_number",
+            values: { $exists: true, $ne: [] },
+          },
+        },
+      }).select("fieldData");
+
+      let updated = 0;
+      for (const lead of leads) {
+        const phoneField = lead.fieldData.find((d) => d.name === "phone_number");
+        const raw = phoneField?.values?.[0];
+        if (!raw || raw.startsWith("+")) continue;
+
+        const normalized = normalizePhoneWithCode(raw);
+        if (normalized === raw) continue;
+
+        phoneField.values = [normalized];
+        lead.markModified("fieldData");
+        await lead.save();
+        updated++;
+      }
+      if (updated) {
+        console.log(`[startup-backfill] phone +91 normalized for ${updated} leads`.cyan);
+      }
+    } catch (e) {
+      console.error("[startup-backfill] phone error:", e.message);
+    }
+  }, 7000);
 });
 
 // ------------------------------------

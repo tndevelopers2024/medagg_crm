@@ -60,7 +60,7 @@ const tomorrowYMD = () => toYMD(new Date(Date.now() + 24 * 60 * 60 * 1000));
 
 const LeadListItem = ({ lead, active, onClick }) => {
     const name = getLeadName(lead);
-    const status = lead.status || "new";
+    const status = lead.status || "New Lead";
 
     return (
         <div
@@ -361,14 +361,14 @@ export default function SearchLeadsPage() {
                                 <Title level={4} style={{ marginBottom: 8 }}>{getLeadName(selectedLead)}</Title>
                                 <Space size={12} wrap>
                                     <Select
-                                        value={selectedLead.status || "new"}
+                                        value={selectedLead.status || "New Lead"}
                                         onChange={handleStageChange}
                                         loading={changingStatus}
                                         disabled={changingStatus}
                                         size="small"
                                         style={{ minWidth: 140 }}
                                         options={leadStages.map(stage => ({
-                                            value: stage.stageName,
+                                            value: stage.displayLabel || stage.stageName,
                                             label: formatStatus(stage.displayLabel || stage.stageName),
                                         }))}
                                     />
