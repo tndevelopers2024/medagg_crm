@@ -264,6 +264,49 @@ httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(
     `🚀 Server running on port ${PORT} (listening on 0.0.0.0)`.green.bold
   );
+
+  // ── Auto-backfill followUpAt from call_later_date (runs once on startup) ──
+  setTimeout(async () => {
+    try {
+      const leads = await Lead.find({
+        $or: [{ followUpAt: null }, { followUpAt: { $exists: false } }],
+        fieldData: {
+          $elemMatch: {
+            name: { $regex: /call_later_date|call_later/i },
+            values: { $exists: true, $ne: [] },
+          },
+        },
+      });
+      if (!leads.length) return;
+
+      const { parseDate } = require("./controllers/importController");
+      let updated = 0;
+      for (const lead of leads) {
+        const f = lead.fieldData.find((d) =>
+          /call_later_date|call_later/i.test(d.name)
+        );
+        const raw = f?.values?.[0];
+        if (!raw) continue;
+        const parsed = parseDate(raw);
+        if (!parsed) continue;
+
+        // Normalize fieldData to DD/MM/YYYY
+        const dd = String(parsed.getDate()).padStart(2, "0");
+        const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+        f.values = [`${dd}/${mm}/${parsed.getFullYear()}`];
+
+        lead.followUpAt = parsed;
+        lead.markModified("fieldData");
+        await lead.save();
+        updated++;
+      }
+      if (updated) {
+        console.log(`[startup-backfill] followUpAt set for ${updated} leads`.cyan);
+      }
+    } catch (e) {
+      console.error("[startup-backfill] error:", e.message);
+    }
+  }, 5000);
 });
 
 // ------------------------------------

@@ -498,4 +498,4 @@ const deleteMapping = async (req, res) => {
   }
 };
 
-module.exports = { importLeads, getMappings, saveMappings, deleteMapping };
+module.exports = { importLeads, getMappings, saveMappings, deleteMapping, parseDate };
