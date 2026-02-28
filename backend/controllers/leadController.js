@@ -129,27 +129,31 @@ const buildLeadFilter = async (query) => {
   // Date range
   if (dateMode) {
     const now = new Date();
-    const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-    const dayEnd = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+    const dayBoundsIST = (d) => {
+      const dt = new Date(d);
+      const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+      istDate.setUTCHours(0, 0, 0, 0);
+      const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+      return { start, end: new Date(start.getTime() + 86399999) };
+    };
 
     if (dateMode === 'Today') {
-      filter.createdTime = { $gte: dayStart(now), $lte: dayEnd(now) };
+      const { start, end } = dayBoundsIST(now);
+      filter.createdTime = { $gte: start, $lte: end };
     } else if (dateMode === 'Yesterday') {
-      const y = new Date(now);
-      y.setDate(y.getDate() - 1);
-      filter.createdTime = { $gte: dayStart(y), $lte: dayEnd(y) };
+      const y = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const { start, end } = dayBoundsIST(y);
+      filter.createdTime = { $gte: start, $lte: end };
     } else if (dateMode === '7d') {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 6);
-      filter.createdTime = { $gte: dayStart(d), $lte: dayEnd(now) };
+      const d = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
+      filter.createdTime = { $gte: dayBoundsIST(d).start, $lte: dayBoundsIST(now).end };
     } else if (dateMode === '30d') {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 29);
-      filter.createdTime = { $gte: dayStart(d), $lte: dayEnd(now) };
+      const d = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000);
+      filter.createdTime = { $gte: dayBoundsIST(d).start, $lte: dayBoundsIST(now).end };
     } else if (dateMode === 'Custom' && from && to) {
       filter.createdTime = {
-        $gte: new Date(`${from}T00:00:00`),
-        $lte: new Date(`${to}T23:59:59.999`),
+        $gte: dayBoundsIST(new Date(`${from}T00:00:00+05:30`)).start,
+        $lte: dayBoundsIST(new Date(`${to}T00:00:00+05:30`)).end,
       };
     }
   }
@@ -157,8 +161,15 @@ const buildLeadFilter = async (query) => {
   // Follow-up filter
   if (followup && followup !== 'All') {
     const now = new Date();
-    const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-    const dayEnd = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+    // IST-aware day bounds (UTC+5:30) — works correctly regardless of server timezone
+    const dayBoundsIST = (d) => {
+      const dt = new Date(d);
+      const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+      istDate.setUTCHours(0, 0, 0, 0);
+      const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+      return { start, end: new Date(start.getTime() + 86399999) };
+    };
+    const { start: dayStart, end: dayEnd } = dayBoundsIST(now);
     const isNot = followupOp === 'is_not';
 
     if (followup === 'Scheduled') {
@@ -174,32 +185,32 @@ const buildLeadFilter = async (query) => {
       if (isNot) {
         filter.$and = filter.$and || [];
         filter.$and.push({
-          $or: [{ followUpAt: { $lt: dayStart(now) } }, { followUpAt: { $gt: dayEnd(now) } }, { followUpAt: null }, { followUpAt: { $exists: false } }],
+          $or: [{ followUpAt: { $lt: dayStart } }, { followUpAt: { $gt: dayEnd } }, { followUpAt: null }, { followUpAt: { $exists: false } }],
         });
       } else {
-        filter.followUpAt = { $gte: dayStart(now), $lte: dayEnd(now) };
+        filter.followUpAt = { $gte: dayStart, $lte: dayEnd };
       }
     } else if (followup === 'Tomorrow') {
-      const tmr = new Date(now);
-      tmr.setDate(tmr.getDate() + 1);
+      const tmr = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const { start: tmrStart, end: tmrEnd } = dayBoundsIST(tmr);
       if (isNot) {
         filter.$and = filter.$and || [];
         filter.$and.push({
-          $or: [{ followUpAt: { $lt: dayStart(tmr) } }, { followUpAt: { $gt: dayEnd(tmr) } }, { followUpAt: null }, { followUpAt: { $exists: false } }],
+          $or: [{ followUpAt: { $lt: tmrStart } }, { followUpAt: { $gt: tmrEnd } }, { followUpAt: null }, { followUpAt: { $exists: false } }],
         });
       } else {
-        filter.followUpAt = { $gte: dayStart(tmr), $lte: dayEnd(tmr) };
+        filter.followUpAt = { $gte: tmrStart, $lte: tmrEnd };
       }
     } else if (followup === 'This Week') {
-      const weekEnd = new Date(now);
-      weekEnd.setDate(weekEnd.getDate() + 7);
+      const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const { end: weekEndBound } = dayBoundsIST(weekEnd);
       if (isNot) {
         filter.$and = filter.$and || [];
         filter.$and.push({
-          $or: [{ followUpAt: { $lt: now } }, { followUpAt: { $gt: weekEnd } }, { followUpAt: null }, { followUpAt: { $exists: false } }],
+          $or: [{ followUpAt: { $lt: now } }, { followUpAt: { $gt: weekEndBound } }, { followUpAt: null }, { followUpAt: { $exists: false } }],
         });
       } else {
-        filter.followUpAt = { $gte: now, $lte: weekEnd };
+        filter.followUpAt = { $gte: now, $lte: weekEndBound };
       }
     } else if (followup === 'Overdue') {
       if (isNot) {
