@@ -17,6 +17,9 @@ const DEFAULTS = {
   search: "",
 };
 
+// All URL param keys owned by this hook — used to avoid overwriting analytics params
+const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'followup', 'opd', 'ipd', 'diag', 'campaign', 'search', 'ops', 'cf'];
+
 // Resolve legacy `view` param and special `date` values into concrete filter state
 function resolveInitialParams(searchParams) {
   const raw = {};
@@ -29,6 +32,23 @@ function resolveInitialParams(searchParams) {
         raw[key] = val;
       }
     }
+  }
+
+  // Parse filter operators (e.g. ops=status:is_not,caller:is)
+  const opsParam = searchParams.get('ops');
+  if (opsParam) {
+    const ops = {};
+    opsParam.split(',').forEach(pair => {
+      const idx = pair.indexOf(':');
+      if (idx > 0) ops[pair.slice(0, idx)] = pair.slice(idx + 1);
+    });
+    if (Object.keys(ops).length > 0) raw.ops = ops;
+  }
+
+  // Parse custom field filters (JSON-encoded)
+  const cfParam = searchParams.get('cf');
+  if (cfParam) {
+    try { raw.cf = JSON.parse(cfParam); } catch (e) { /* ignore malformed */ }
   }
 
   // Legacy view param support
@@ -83,7 +103,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
   const [search, setSearch] = useState(initialParams.search || DEFAULTS.search);
 
   // Filter operators — { filterKey: 'is' | 'is_not' }
-  const [filterOperators, setFilterOperators] = useState({});
+  const [filterOperators, setFilterOperators] = useState(initialParams.ops || {});
 
   const setFilterOperator = useCallback((key, op) => {
     setFilterOperators(prev => ({ ...prev, [key]: op }));
@@ -94,7 +114,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
   }, []);
 
   // Custom field filters — { fieldName: { value, operator } }
-  const [customFieldFilters, setCustomFieldFilters] = useState({});
+  const [customFieldFilters, setCustomFieldFilters] = useState(initialParams.cf || {});
 
   const setCustomFieldFilter = useCallback((fieldName, value, operator = 'is') => {
     setCustomFieldFilters(prev => ({ ...prev, [fieldName]: { value, operator } }));
@@ -123,8 +143,8 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
   }, [search]);
 
   // Sync filter state → URL (replace to avoid polluting history)
+  // Uses functional setSearchParams to preserve params owned by other hooks (e.g. vm, ct, cfn)
   useEffect(() => {
-    // Only sync TO URL if we are currently active (initialParams done)
     const params = {};
     if (dateMode !== DEFAULTS.date) params.date = dateMode;
     if (customFrom !== DEFAULTS.from) params.from = customFrom;
@@ -139,17 +159,39 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if (campaignFilter.length > 0) params.campaign = campaignFilter.join(',');
     if (search !== DEFAULTS.search) params.search = search;
 
-    // To prevent infinite loops, we compare keys
-    const currentParams = Object.fromEntries(searchParams.entries());
-    const hasChanged = Object.keys(params).length !== Object.keys(currentParams).length ||
-      Object.entries(params).some(([k, v]) => currentParams[k] !== v);
+    // filterOperators — only include non-default ('is') entries
+    const nonDefaultOps = Object.entries(filterOperators).filter(([, v]) => v && v !== 'is');
+    if (nonDefaultOps.length > 0) {
+      params.ops = nonDefaultOps.map(([k, v]) => `${k}:${v}`).join(',');
+    }
+
+    // customFieldFilters — JSON-encoded
+    if (Object.keys(customFieldFilters).length > 0) {
+      params.cf = JSON.stringify(customFieldFilters);
+    }
+
+    // Compare only filter-owned params to avoid false positives from analytics params
+    const currentFilterParams = {};
+    for (const key of FILTER_PARAM_KEYS) {
+      const val = searchParams.get(key);
+      if (val !== null) currentFilterParams[key] = val;
+    }
+    const hasChanged = Object.keys(params).length !== Object.keys(currentFilterParams).length ||
+      Object.entries(params).some(([k, v]) => currentFilterParams[k] !== String(v));
 
     if (hasChanged) {
-      setSearchParams(params, { replace: true });
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        // Clear all filter-owned params, then set the new ones
+        FILTER_PARAM_KEYS.forEach(k => next.delete(k));
+        Object.entries(params).forEach(([k, v]) => next.set(k, v));
+        return next;
+      }, { replace: true });
     }
   }, [
     dateMode, customFrom, customTo, source, callerFilter, leadStatus,
     followupFilter, opdStatus, ipdStatus, diagnostics, campaignFilter, search,
+    filterOperators, customFieldFilters,
     setSearchParams, searchParams
   ]);
 
@@ -177,6 +219,14 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if ((params.ipd || "IPD Status") !== ipdStatus) setIpdStatus(params.ipd || "IPD Status");
     if ((params.diag || "Diagnostics") !== diagnostics) setDiagnostics(params.diag || "Diagnostics");
     if ((params.search || "") !== search) setSearch(params.search || "");
+
+    // filterOperators
+    const newOps = params.ops || {};
+    if (JSON.stringify(newOps) !== JSON.stringify(filterOperators)) setFilterOperators(newOps);
+
+    // customFieldFilters
+    const newCf = params.cf || {};
+    if (JSON.stringify(newCf) !== JSON.stringify(customFieldFilters)) setCustomFieldFilters(newCf);
   }, [searchParams]); // This effect listens to URL changes
 
   // Stable filterState object for the data hook (only changes when actual filter values change)

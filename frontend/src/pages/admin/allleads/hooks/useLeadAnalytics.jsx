@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { fetchAnalytics, fetchFilterOptions, exportAnalytics, downloadCSV } from "../../../../utils/analyticsApi";
 import {
   StatusBarChart,
@@ -40,9 +41,11 @@ export default function useLeadAnalytics({
   fieldConfigs,
   notify,
 }) {
-  const [viewMode, setViewMode] = useState("list");
-  const [chartType, setChartType] = useState("status");
-  const [customFieldName, setCustomFieldName] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [viewMode, setViewMode] = useState(() => searchParams.get('vm') || 'list');
+  const [chartType, setChartType] = useState(() => searchParams.get('ct') || 'status');
+  const [customFieldName, setCustomFieldName] = useState(() => searchParams.get('cfn') || '');
   const [chartData, setChartData] = useState([]);
   const [chartTotalCount, setChartTotalCount] = useState(0);
   const [chartLoading, setChartLoading] = useState(false);
@@ -58,6 +61,32 @@ export default function useLeadAnalytics({
     fieldConfigs: [],
     sources: [],
   });
+
+  // Sync analytics state → URL (preserves filter params owned by useLeadFilters)
+  useEffect(() => {
+    const currentVm = searchParams.get('vm') || 'list';
+    const currentCt = searchParams.get('ct') || 'status';
+    const currentCfn = searchParams.get('cfn') || '';
+    if (currentVm === viewMode && currentCt === chartType && currentCfn === customFieldName) return;
+
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (viewMode !== 'list') next.set('vm', viewMode); else next.delete('vm');
+      if (chartType !== 'status') next.set('ct', chartType); else next.delete('ct');
+      if (customFieldName) next.set('cfn', customFieldName); else next.delete('cfn');
+      return next;
+    }, { replace: true });
+  }, [viewMode, chartType, customFieldName, setSearchParams, searchParams]);
+
+  // Sync URL → analytics state (back button / external navigation)
+  useEffect(() => {
+    const urlVm = searchParams.get('vm') || 'list';
+    const urlCt = searchParams.get('ct') || 'status';
+    const urlCfn = searchParams.get('cfn') || '';
+    if (urlVm !== viewMode) setViewMode(urlVm);
+    if (urlCt !== chartType) setChartType(urlCt);
+    if (urlCfn !== customFieldName) setCustomFieldName(urlCfn);
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load analytics filter options when switching to chart view
   useEffect(() => {
