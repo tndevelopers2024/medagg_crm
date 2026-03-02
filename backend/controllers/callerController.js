@@ -338,6 +338,67 @@ const updateLeadDetails = async (req, res) => {
       }
     }
 
+    // Sync followUpAt from call_later_date when it's included in fieldDataUpdates
+    if (fieldDataUpdates && typeof fieldDataUpdates === "object") {
+      const clKey = Object.keys(fieldDataUpdates).find(k => /call_later_date|call_later|calllater/i.test(norm(k)));
+      if (clKey) {
+        const rawDate = String(fieldDataUpdates[clKey] || "").trim();
+        if (rawDate) {
+          let dateStr = null;
+          const m1 = rawDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+          const m2 = rawDate.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+          if (m1) {
+            dateStr = `${m1[1]}-${String(m1[2]).padStart(2, '0')}-${String(m1[3]).padStart(2, '0')}`;
+          } else if (m2) {
+            dateStr = `${m2[3]}-${String(m2[2]).padStart(2, '0')}-${String(m2[1]).padStart(2, '0')}`;
+          }
+          if (dateStr) {
+            let hr = DEFAULT_FOLLOWUP_HOUR;
+            let min = DEFAULT_FOLLOWUP_MIN;
+            if (lead.followUpAt) {
+              const prevHM = getISTHourMinute(new Date(lead.followUpAt));
+              hr = prevHM.hr;
+              min = prevHM.min;
+            }
+            const newFollowUp = atDateIST(dateStr, hr, min);
+            if (newFollowUp) {
+              const { start: existStart } = lead.followUpAt ? dayBoundsIST(new Date(lead.followUpAt)) : {};
+              const { start: newStart } = dayBoundsIST(newFollowUp);
+              if (!existStart || existStart.getTime() !== newStart.getTime()) {
+                lead.followUpAt = newFollowUp;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback: if call_later_date was NOT in this save's updates, still sync from existing fieldData.
+    // This corrects historical leads where followUpAt was stored with wrong MM/DD parsing.
+    if (!fieldDataUpdates || !Object.keys(fieldDataUpdates).some(k => /call_later_date|call_later|calllater/i.test(norm(k)))) {
+      const clEntry = (lead.fieldData || []).find(f => /call_later_date|call_later|calllater/i.test(norm(f?.name || "")));
+      const rawFallback = clEntry?.values?.[0] ? String(clEntry.values[0]).trim() : null;
+      if (rawFallback) {
+        let fallbackDateStr = null;
+        const fb1 = rawFallback.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        const fb2 = rawFallback.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+        if (fb1) fallbackDateStr = `${fb1[1]}-${String(fb1[2]).padStart(2, '0')}-${String(fb1[3]).padStart(2, '0')}`;
+        else if (fb2) fallbackDateStr = `${fb2[3]}-${String(fb2[2]).padStart(2, '0')}-${String(fb2[1]).padStart(2, '0')}`; // DD/MM/YYYY
+        if (fallbackDateStr) {
+          const fbHr = lead.followUpAt ? getISTHourMinute(new Date(lead.followUpAt)).hr : DEFAULT_FOLLOWUP_HOUR;
+          const fbMin = lead.followUpAt ? getISTHourMinute(new Date(lead.followUpAt)).min : DEFAULT_FOLLOWUP_MIN;
+          const fbFollowUp = atDateIST(fallbackDateStr, fbHr, fbMin);
+          if (fbFollowUp) {
+            const { start: fbExistStart } = lead.followUpAt ? dayBoundsIST(new Date(lead.followUpAt)) : {};
+            const { start: fbNewStart } = dayBoundsIST(fbFollowUp);
+            if (!fbExistStart || fbExistStart.getTime() !== fbNewStart.getTime()) {
+              lead.followUpAt = fbFollowUp;
+            }
+          }
+        }
+      }
+    }
+
     // OP/IP bookings add/update/remove
     if (Array.isArray(opBookingsAdd)) {
       opBookingsAdd.forEach((p) => {

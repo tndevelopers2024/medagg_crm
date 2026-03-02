@@ -1,8 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 
 export default function useLeadSelection(leads, serverMeta) {
-  const [selected, setSelected] = useState(new Set());
+  // Initialize from sessionStorage if available
+  const [selected, setSelected] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem("medagg_selected_leads");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return new Set(parsed);
+      }
+    } catch (err) {
+      console.error("Failed to parse stored selected leads", err);
+    }
+    return new Set();
+  });
   const headerCheckboxRef = useRef(null);
+
+  // Sync back to sessionStorage whenever `selected` changes
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("medagg_selected_leads", JSON.stringify(Array.from(selected)));
+    } catch (err) {
+      console.error("Failed to save selected leads to session storage", err);
+    }
+  }, [selected]);
 
   // Server already paginates — currentRows = leads as-is
   const currentRows = leads;

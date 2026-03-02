@@ -232,10 +232,10 @@ const buildLeadFilter = async (query) => {
       if (isNot) {
         filter.$and = filter.$and || [];
         filter.$and.push({
-          $or: [{ followUpAt: null }, { followUpAt: { $exists: false } }, { followUpAt: { $gte: now } }],
+          $or: [{ followUpAt: null }, { followUpAt: { $exists: false } }, { followUpAt: { $gte: dayStart } }],
         });
       } else {
-        filter.followUpAt = { $lt: now, $ne: null };
+        filter.followUpAt = { $lt: dayStart, $ne: null };
       }
     } else if (followup === 'Not Scheduled') {
       filter.$and = filter.$and || [];

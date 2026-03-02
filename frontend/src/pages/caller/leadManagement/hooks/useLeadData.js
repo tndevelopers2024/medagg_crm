@@ -10,6 +10,7 @@ import { queryKeys } from "../../../../hooks/queries/queryKeys";
 import { useAuth } from "../../../../contexts/AuthContext";
 import toast from "react-hot-toast";
 import { fieldDataToObject } from "../../../../components/DynamicField";
+import dayjs from "dayjs";
 
 export default function useLeadData(id, loadActivities) {
   useAuth(); // ensure auth context is available
@@ -141,6 +142,47 @@ export default function useLeadData(id, loadActivities) {
       return { ...prev, source: mapped };
     });
   }, [lead]);
+
+  // Sync call_later_date field → the displayed "Next follow-up" badge.
+  // call_later_date is stored in fieldData as a DD/MM/YYYY string.
+  // followUpAt in the DB may differ if it was imported with wrong MM/DD parsing.
+  // Fix: when call_later_date exists, parse it (DD/MM/YYYY) and keep setLead's followUpAt in sync
+  // so the right panel reflects the same date as the custom field.
+  useEffect(() => {
+    if (!lead) return;
+    setLeadData((prev) => {
+      const callLaterKey = Object.keys(prev).find(k => /call_later_date|call_later|calllater/i.test(k));
+      if (!callLaterKey || !prev[callLaterKey]) return prev;
+      // Parse the stored call_later_date correctly as DD/MM/YYYY
+      const raw = String(prev[callLaterKey]).trim();
+      // Already YYYY-MM-DD (from DatePicker): use as-is
+      let parsed = dayjs(raw, "YYYY-MM-DD", true);
+      // DD/MM/YYYY from legacy import
+      if (!parsed.isValid()) parsed = dayjs(raw, "DD/MM/YYYY", true);
+      if (!parsed.isValid()) return prev;
+      return prev; // don't mutate leadData; just trigger the setLead below
+    });
+    // Sync the lead.followUpAt to match call_later_date if they differ
+    setLead((prevLead) => {
+      if (!prevLead) return prevLead;
+      const fd = prevLead.fieldData || [];
+      const clEntry = fd.find(f => /call_later_date|call_later|calllater/i.test(f.name || ""));
+      if (!clEntry || !clEntry.values?.[0]) return prevLead;
+      const raw = String(clEntry.values[0]).trim();
+      let parsed = dayjs(raw, "YYYY-MM-DD", true);
+      if (!parsed.isValid()) parsed = dayjs(raw, "DD/MM/YYYY", true);
+      if (!parsed.isValid()) return prevLead;
+      const existingAt = prevLead.followUpAt ? dayjs(prevLead.followUpAt) : null;
+      // Only update if the CALENDAR DATE differs (ignore time)
+      if (existingAt && existingAt.isSame(parsed, "day")) return prevLead;
+      // Build a new followUpAt with the same time-of-day (or midnight IST if unknown)
+      const hour = existingAt ? existingAt.hour() : 10;
+      const minute = existingAt ? existingAt.minute() : 0;
+      const newAt = parsed.hour(hour).minute(minute).second(0).millisecond(0).toDate();
+      return { ...prevLead, followUpAt: newAt };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead?.fieldData]);
 
   // Auto-populate state from city on initial load (when Meta only sends city)
   useEffect(() => {

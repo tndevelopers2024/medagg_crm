@@ -98,7 +98,10 @@ export const COLUMN_DEFINITIONS = [
     sticky: false,
     thClassName: "px-4 py-3 font-medium",
     tdClassName: "px-4 py-3 text-xs text-gray-400",
-    render: (lead) => lead.createdTime?.toLocaleDateString(),
+    render: (lead) => {
+      if (!lead.createdTime) return "—";
+      return new Date(lead.createdTime).toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" });
+    },
   },
   {
     id: "email",
@@ -297,7 +300,7 @@ export const COLUMN_DEFINITIONS = [
     render: (lead) => {
       if (!lead.followUpAt) return <span className="text-gray-400">—</span>;
       const d = new Date(lead.followUpAt);
-      return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     },
   },
 
@@ -325,7 +328,7 @@ export const COLUMN_DEFINITIONS = [
     render: (lead) => {
       const d = lead.raw?.lastCallAt;
       if (!d) return <span className="text-gray-400">—</span>;
-      return new Date(d).toLocaleDateString();
+      return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" });
     },
   },
   {

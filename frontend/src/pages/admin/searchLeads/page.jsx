@@ -468,7 +468,7 @@ export default function SearchLeadsPage() {
                                     {renderField(selectedLead, "procedure") || "—"}
                                 </Descriptions.Item>
                                 <Descriptions.Item label={<Space size={4}><FiCalendar className="text-gray-400" /> Call Later Date</Space>}>
-                                    {selectedLead.followUpAt ? new Date(selectedLead.followUpAt).toLocaleDateString() : "—"}
+                                    {selectedLead.followUpAt ? new Date(selectedLead.followUpAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
                                 </Descriptions.Item>
                                 <Descriptions.Item label={<Space size={4}><FiMapPin className="text-gray-400" /> Location</Space>}>
                                     {renderField(selectedLead, "location") || "—"}
@@ -504,7 +504,7 @@ export default function SearchLeadsPage() {
                                                         <div className="mt-1">
                                                             <Text type="secondary" className="text-xs">
                                                                 <FiClock size={10} className="inline mr-1" />
-                                                                {date.toLocaleDateString()} at {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                {date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} at {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                                 {" • "}
                                                                 {act.actor?.name || "System"}
                                                             </Text>

@@ -11,6 +11,28 @@ import {
     Cell,
 } from "recharts";
 
+/**
+ * Custom bar shape. The transparent click target extends from the chart top (y=0)
+ * all the way down to the bar's base, so clicking anywhere in the column works.
+ * The visible colored bar stays at its correct proportional height.
+ */
+const MinHeightBar = ({ x, y, width, height, fill, onClick }) => {
+    const visibleH = Math.max(height || 0, 0);
+    const barBottom = y + visibleH; // x-axis level in SVG coords
+    const rx = Math.min(4, visibleH / 2);
+
+    return (
+        <g onClick={onClick} style={{ cursor: "pointer" }}>
+            {/* Full-column transparent hit area from chart top to x-axis */}
+            <rect x={x} y={0} width={width} height={barBottom} fill="transparent" />
+            {/* Visible bar at actual proportional height */}
+            {visibleH > 0 && (
+                <rect x={x} y={y} width={width} height={visibleH} fill={fill} rx={rx} ry={rx} />
+            )}
+        </g>
+    );
+};
+
 // Color palette matching the design
 const COLORS = [
     "#6366f1", // Indigo
@@ -77,7 +99,8 @@ export const StatusBarChart = ({ data, onBarClick }) => {
                 <Bar
                     dataKey="count"
                     maxBarSize={60}
-                    radius={[8, 8, 0, 0]}
+                    minPointSize={2}
+                    shape={MinHeightBar}
                     onClick={onBarClick}
                     cursor="pointer"
                 >
@@ -118,7 +141,8 @@ export const LostReasonsChart = ({ data, onBarClick }) => {
                 <Bar
                     dataKey="count"
                     maxBarSize={60}
-                    radius={[8, 8, 0, 0]}
+                    minPointSize={2}
+                    shape={MinHeightBar}
                     onClick={onBarClick}
                     cursor="pointer"
                 >
@@ -160,7 +184,8 @@ export const AssigneeChart = ({ data, onBarClick }) => {
                     dataKey="count"
                     fill="#6366f1"
                     maxBarSize={60}
-                    radius={[8, 8, 0, 0]}
+                    minPointSize={2}
+                    shape={MinHeightBar}
                     onClick={onBarClick}
                     cursor="pointer"
                 />
@@ -192,7 +217,8 @@ export const CallsHistogramChart = ({ data, onBarClick }) => {
                     dataKey="count"
                     fill="#8b5cf6"
                     maxBarSize={60}
-                    radius={[8, 8, 0, 0]}
+                    minPointSize={2}
+                    shape={MinHeightBar}
                     onClick={onBarClick}
                     cursor="pointer"
                 />
@@ -231,7 +257,8 @@ export const RatingChart = ({ data, onBarClick }) => {
                 <Bar
                     dataKey="count"
                     maxBarSize={60}
-                    radius={[8, 8, 0, 0]}
+                    minPointSize={2}
+                    shape={MinHeightBar}
                     onClick={onBarClick}
                     cursor="pointer"
                 >
@@ -272,7 +299,8 @@ export const CallStatusChart = ({ data, onBarClick }) => {
                 <Bar
                     dataKey="count"
                     maxBarSize={60}
-                    radius={[8, 8, 0, 0]}
+                    minPointSize={2}
+                    shape={MinHeightBar}
                     onClick={onBarClick}
                     cursor="pointer"
                 >
@@ -313,7 +341,8 @@ export const CustomFieldChart = ({ data, onBarClick, fieldName }) => {
                 <Bar
                     dataKey="count"
                     maxBarSize={60}
-                    radius={[8, 8, 0, 0]}
+                    minPointSize={2}
+                    shape={MinHeightBar}
                     onClick={onBarClick}
                     cursor="pointer"
                 >

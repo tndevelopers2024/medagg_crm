@@ -165,7 +165,8 @@ exports.exportLeads = async (req, res) => {
                 const { end: weekEndBound } = dayBoundsIST(weekEnd);
                 query.followUpAt = { $gte: now, $lte: weekEndBound };
             } else if (filters.followupFilter === 'Overdue') {
-                query.followUpAt = { $lt: now, $ne: null };
+                const { start: dayStart } = dayBoundsIST(now);
+                query.followUpAt = { $lt: dayStart, $ne: null };
             } else if (filters.followupFilter === 'Not Scheduled') {
                 query.$and = query.$and || [];
                 query.$and.push({
