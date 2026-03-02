@@ -8,7 +8,7 @@ import dayjs from "dayjs";
 import {
     FiPhone, FiMapPin, FiCalendar, FiClock,
     FiUser, FiChevronRight, FiCopy, FiActivity,
-    FiBell, FiPhoneCall
+    FiBell, FiPhoneCall, FiTrash2
 } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
@@ -17,7 +17,7 @@ import AccessDenied from "../../../components/AccessDenied";
 import {
     fetchAllLeads, fetchAssignedLeads, fetchLeadStages,
     updateLeadStatus, fetchLeadActivities, updateLeadDetails,
-    requestMobileCall, createAlarm, deferLeadToNextDay
+    requestMobileCall, createAlarm, deferLeadToNextDay, deleteLeads
 } from "../../../utils/api";
 import WhatsAppModal from "../../caller/leadManagement/components/WhatsAppModal";
 import AlarmModal from "../../../components/AlarmModal";
@@ -117,6 +117,7 @@ export default function SearchLeadsPage() {
     const [laterTime, setLaterTime] = useState("10:00");
     const [deferring, setDeferring] = useState(false);
     const [requestingCall, setRequestingCall] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     // Load stages
     useEffect(() => {
@@ -282,6 +283,32 @@ export default function SearchLeadsPage() {
         }
     };
 
+    const handleDelete = () => {
+        if (!selectedLead) return;
+        const id = selectedLead.id || selectedLead._id;
+        const name = getLeadName(selectedLead);
+        Modal.confirm({
+            title: "Delete Lead",
+            content: `Are you sure you want to permanently delete "${name}"? This cannot be undone.`,
+            okText: "Delete",
+            okType: "danger",
+            cancelText: "Cancel",
+            onOk: async () => {
+                setDeleting(true);
+                try {
+                    await deleteLeads([id]);
+                    message.success("Lead deleted");
+                    setLeads(prev => prev.filter(l => (l.id || l._id) !== id));
+                    setSelectedLead(null);
+                } catch (err) {
+                    message.error("Failed to delete lead");
+                } finally {
+                    setDeleting(false);
+                }
+            },
+        });
+    };
+
     const currentRating = parseInt(renderField(selectedLead || {}, "rating") || "0", 10);
 
     // Build leadData map for WhatsApp template interpolation
@@ -397,6 +424,17 @@ export default function SearchLeadsPage() {
                                         }}
                                     />
                                 </Tooltip>
+                                {hasPermission("leads.all.delete") && (
+                                    <Tooltip title="Delete lead">
+                                        <Button
+                                            type="text"
+                                            danger
+                                            icon={<FiTrash2 />}
+                                            loading={deleting}
+                                            onClick={handleDelete}
+                                        />
+                                    </Tooltip>
+                                )}
                             </Space>
                         </div>
 

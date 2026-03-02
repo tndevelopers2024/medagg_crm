@@ -717,7 +717,7 @@ const createLead = async (req, res) => {
       // Expanded fields
       campaignId, adId, adCreativeId,
       followUpAt, lastCallAt, callCount, lastCallOutcome,
-      opBookings, ipBookings
+      opBookings, ipBookings, diagnosticBookings
     } = req.body || {};
 
     // Determine which fieldData to use
@@ -759,11 +759,6 @@ const createLead = async (req, res) => {
       }
     }
 
-    const allowedStatuses = [
-      "new", "hot", "hot-ip", "prospective", "recapture", "dnp", "opd_booked",
-      "in_progress", "contacted", "not_reachable", "not_interested", "interested", "converted",
-    ];
-
     const { getStateFromCity } = require("../utils/cityStateMap");
 
     // ... existing code ...
@@ -797,7 +792,7 @@ const createLead = async (req, res) => {
       createdTime: new Date(),
       fieldData,
       notes: notes || "",
-      status: allowedStatuses.includes(status) ? status : undefined,
+      status: status || undefined,
       assignedTo: assignedTo || null,
 
       // New fields
