@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import { useNavigate, useParams } from "react-router-dom";
 import { FiList, FiActivity, FiPaperclip } from "react-icons/fi";
@@ -196,6 +196,32 @@ export default function LeadManagement() {
     loadLeadAlarm();
   }, [id]);
 
+  // --- Auto-save logic ---
+  const autoSaveSkipCount = useRef(0);
+  const autoSaveReady = useRef(false);
+
+  // Mark auto-save as ready only after initial data is fully loaded
+  useEffect(() => {
+    if (lead && !autoSaveReady.current) {
+      // Wait a tick so all initial state-setting effects finish
+      const t = setTimeout(() => {
+        autoSaveReady.current = true;
+        autoSaveSkipCount.current = 0;
+      }, 2000);
+      return () => clearTimeout(t);
+    }
+  }, [lead]);
+
+  useEffect(() => {
+    if (!autoSaveReady.current) return;
+
+    const timer = setTimeout(() => {
+      handleSave(true); // silent auto-save
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [leadData, notes, status, handleSave]);
+
   // --- Back navigation guard ---
   const handleBack = () => {
     const isInitialNew = ["new", "new lead"].includes(
@@ -254,11 +280,18 @@ export default function LeadManagement() {
     );
   }
 
+  const isLost = leadStages?.find((stage) => {
+    const stageName = (stage.displayLabel || stage.stageName || "").toLowerCase();
+    const currentStatus = (status || "").toLowerCase();
+    return stageName === currentStatus;
+  })?.stageCategory === "lost";
+
   return (
     <main className="min-h-screen">
       <LeadHeader
         leadName={leadData.full_name}
         status={status}
+        isLost={isLost}
         rating={leadData.rating}
         onRatingChange={(val) => handleLeadFieldChange("rating", val)}
         onBack={handleBack}
@@ -330,54 +363,54 @@ export default function LeadManagement() {
 
           {activeTab === "bookings" && (
             <PermissionGate permission="leads.detail.manageBookings" fallback={<div className="text-center text-gray-400 py-8">No permission to manage bookings</div>}>
-            <BookingsSection
-              opBookings={opBookings}
-              op={op}
-              setOp={setOp}
-              showOpForm={showOpForm}
-              setShowOpForm={setShowOpForm}
-              onAddOp={handleAddOp}
-              onRemoveOp={handleRemoveOp}
-              onDoneOp={handleDoneOp}
-              editingOpId={editingOpId}
-              setEditingOpId={setEditingOpId}
-              onEditOp={handleEditOp}
-              onUpdateOp={handleUpdateOp}
-              ipBookings={ipBookings}
-              ip={ip}
-              setIp={setIp}
-              showIpForm={showIpForm}
-              setShowIpForm={setShowIpForm}
-              onAddIp={handleAddIp}
-              onRemoveIp={handleRemoveIp}
-              onDoneIp={handleDoneIp}
-              editingIpId={editingIpId}
-              setEditingIpId={setEditingIpId}
-              onEditIp={handleEditIp}
-              onUpdateIp={handleUpdateIp}
-              bookingSaving={bookingSaving}
-              opFields={opFields}
-              ipFields={ipFields}
-              onAddOpOption={onAddOpOption}
-              onAddIpOption={onAddIpOption}
-              diagnosticBookings={diagnosticBookings}
-              diagnostic={diagnostic}
-              setDiagnostic={setDiagnostic}
-              showDiagnosticForm={showDiagnosticForm}
-              setShowDiagnosticForm={setShowDiagnosticForm}
-              onAddDiagnostic={handleAddDiagnostic}
-              onRemoveDiagnostic={handleRemoveDiagnostic}
-              onDoneDiagnostic={handleDoneDiagnostic}
-              editingDiagnosticId={editingDiagnosticId}
-              setEditingDiagnosticId={setEditingDiagnosticId}
-              onEditDiagnostic={handleEditDiagnostic}
-              onUpdateDiagnostic={handleUpdateDiagnostic}
-              diagnosticFields={diagnosticFields}
-              onAddDiagnosticOption={onAddDiagnosticOption}
-              fieldsLoading={bookingFieldsLoading}
-              lead={leadData}
-              user={user}
-            />
+              <BookingsSection
+                opBookings={opBookings}
+                op={op}
+                setOp={setOp}
+                showOpForm={showOpForm}
+                setShowOpForm={setShowOpForm}
+                onAddOp={handleAddOp}
+                onRemoveOp={handleRemoveOp}
+                onDoneOp={handleDoneOp}
+                editingOpId={editingOpId}
+                setEditingOpId={setEditingOpId}
+                onEditOp={handleEditOp}
+                onUpdateOp={handleUpdateOp}
+                ipBookings={ipBookings}
+                ip={ip}
+                setIp={setIp}
+                showIpForm={showIpForm}
+                setShowIpForm={setShowIpForm}
+                onAddIp={handleAddIp}
+                onRemoveIp={handleRemoveIp}
+                onDoneIp={handleDoneIp}
+                editingIpId={editingIpId}
+                setEditingIpId={setEditingIpId}
+                onEditIp={handleEditIp}
+                onUpdateIp={handleUpdateIp}
+                bookingSaving={bookingSaving}
+                opFields={opFields}
+                ipFields={ipFields}
+                onAddOpOption={onAddOpOption}
+                onAddIpOption={onAddIpOption}
+                diagnosticBookings={diagnosticBookings}
+                diagnostic={diagnostic}
+                setDiagnostic={setDiagnostic}
+                showDiagnosticForm={showDiagnosticForm}
+                setShowDiagnosticForm={setShowDiagnosticForm}
+                onAddDiagnostic={handleAddDiagnostic}
+                onRemoveDiagnostic={handleRemoveDiagnostic}
+                onDoneDiagnostic={handleDoneDiagnostic}
+                editingDiagnosticId={editingDiagnosticId}
+                setEditingDiagnosticId={setEditingDiagnosticId}
+                onEditDiagnostic={handleEditDiagnostic}
+                onUpdateDiagnostic={handleUpdateDiagnostic}
+                diagnosticFields={diagnosticFields}
+                onAddDiagnosticOption={onAddDiagnosticOption}
+                fieldsLoading={bookingFieldsLoading}
+                lead={leadData}
+                user={user}
+              />
             </PermissionGate>
           )}
 
@@ -385,14 +418,14 @@ export default function LeadManagement() {
 
           {activeTab === "documents" && (
             <PermissionGate permission="leads.detail.documents" fallback={<div className="text-center text-gray-400 py-8">No permission to view documents</div>}>
-            <DocumentsSection
-              documents={documents}
-              leadId={id}
-              onUploadComplete={loadLeadData}
-              onDeleteComplete={(docId) =>
-                setDocuments((prev) => prev.filter((d) => d._id !== docId))
-              }
-            />
+              <DocumentsSection
+                documents={documents}
+                leadId={id}
+                onUploadComplete={loadLeadData}
+                onDeleteComplete={(docId) =>
+                  setDocuments((prev) => prev.filter((d) => d._id !== docId))
+                }
+              />
             </PermissionGate>
           )}
         </div>

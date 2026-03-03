@@ -12,51 +12,89 @@ const Call = require("../models/CallLog");
  * @param {Array} filters - Array of filter objects {type, operator, value, from, to}
  * @returns {Object} MongoDB query object
  */
+const dayBoundsIST = (dateStr) => {
+    const d = new Date(typeof dateStr === 'string' ? `${dateStr}T00:00:00+05:30` : dateStr);
+    const istDate = new Date(d.getTime() + (5.5 * 60 * 60 * 1000));
+    istDate.setUTCHours(0, 0, 0, 0);
+    const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+    return { start, end: new Date(start.getTime() + 86399999) };
+};
+
 const buildFilterQuery = async (filters = []) => {
     const query = {};
     const andConditions = [];
 
     for (const filter of filters) {
-        const { type, operator, value, from, to } = filter;
+        const { type, operator, value, values, from, to } = filter;
 
         switch (type) {
-            case "assignee":
-                if (value === "Unassigned") {
-                    query.assignedTo = operator === "is" ? null : { $ne: null };
+            case "assignee": {
+                if (operator === 'is_empty') {
+                    andConditions.push({ $or: [{ assignedTo: null }, { assignedTo: { $exists: false } }] });
+                    break;
+                }
+                const assigneeList = values || (value ? [value] : []);
+                if (assigneeList.length === 0) break;
+                const ids = assigneeList.map(v =>
+                    v === "Unassigned" ? null
+                        : mongoose.Types.ObjectId.isValid(v) ? new mongoose.Types.ObjectId(v) : v
+                );
+                const hasUnassigned = assigneeList.includes("Unassigned");
+                if (operator === "is_not") {
+                    // exclude all listed: not null AND not in ids
+                    andConditions.push({ assignedTo: { $nin: ids } });
                 } else {
-                    const assigneeId = mongoose.Types.ObjectId.isValid(value)
-                        ? new mongoose.Types.ObjectId(value)
-                        : value;
-                    query.assignedTo = operator === "is" ? assigneeId : { $ne: assigneeId };
+                    // is: match any in list (including null for Unassigned)
+                    if (hasUnassigned && ids.length === 1) {
+                        andConditions.push({ $or: [{ assignedTo: null }, { assignedTo: { $exists: false } }] });
+                    } else {
+                        andConditions.push({ assignedTo: { $in: ids } });
+                    }
                 }
                 break;
+            }
 
             case "user":
                 break;
 
-            case "leadStatus":
-                query.status = operator === "is" ? value : { $ne: value };
+            case "leadStatus": {
+                if (operator === 'is_empty') {
+                    andConditions.push({ $or: [{ status: null }, { status: '' }, { status: { $exists: false } }] });
+                    break;
+                }
+                if (operator === 'is_include' && value) {
+                    const esc = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    andConditions.push({ status: { $regex: esc, $options: 'i' } });
+                    break;
+                }
+                const statusList = values || (value ? value.split(',').filter(Boolean) : []);
+                if (statusList.length === 0) break;
+                if (operator === 'is_not') {
+                    query.status = { $nin: statusList };
+                } else {
+                    query.status = statusList.length === 1 ? statusList[0] : { $in: statusList };
+                }
                 break;
+            }
 
             case "followUp": {
                 const now = new Date();
-                const dayBoundsIST = (d) => {
-                    const dt = new Date(d);
-                    const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
-                    istDate.setUTCHours(0, 0, 0, 0);
-                    const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
-                    return { start, end: new Date(start.getTime() + 86399999) };
-                };
-
+                if (operator === 'is_empty') {
+                    andConditions.push({ $or: [{ followUpAt: null }, { followUpAt: { $exists: false } }] });
+                    break;
+                }
+                if (operator === 'after' && from) {
+                    query.followUpAt = { $gt: dayBoundsIST(from).end };
+                    break;
+                }
+                if (operator === 'before' && to) {
+                    query.followUpAt = { $lt: dayBoundsIST(to).start };
+                    break;
+                }
                 if (value === "Yes" || value === "Scheduled") {
                     query.followUpAt = { $gt: now };
                 } else if (value === "No" || value === "Not Scheduled") {
-                    andConditions.push({
-                        $or: [
-                            { followUpAt: null },
-                            { followUpAt: { $exists: false } },
-                        ],
-                    });
+                    andConditions.push({ $or: [{ followUpAt: null }, { followUpAt: { $exists: false } }] });
                 } else if (value === "Today") {
                     const { start, end } = dayBoundsIST(now);
                     query.followUpAt = { $gte: start, $lte: end };
@@ -70,17 +108,11 @@ const buildFilterQuery = async (filters = []) => {
                     query.followUpAt = { $gte: now, $lte: weekEndBound };
                 } else if (value === "Overdue") {
                     query.followUpAt = { $lt: now, $ne: null };
-                } else if (value === "Custom") {
-                    if (from && to) {
-                        query.followUpAt = {
-                            $gte: dayBoundsIST(new Date(`${from}T00:00:00+05:30`)).start,
-                            $lte: dayBoundsIST(new Date(`${to}T00:00:00+05:30`)).end,
-                        };
-                    } else if (from) {
-                        query.followUpAt = { $gte: dayBoundsIST(new Date(`${from}T00:00:00+05:30`)).start };
-                    } else if (to) {
-                        query.followUpAt = { $lte: dayBoundsIST(new Date(`${to}T00:00:00+05:30`)).end };
-                    }
+                } else if (value === "Custom" && from && to) {
+                    query.followUpAt = {
+                        $gte: dayBoundsIST(from).start,
+                        $lte: dayBoundsIST(to).end,
+                    };
                 }
                 break;
             }
@@ -91,65 +123,151 @@ const buildFilterQuery = async (filters = []) => {
 
             case "totalCalls": {
                 const callQuery = {};
-                if (from !== undefined && from !== "") {
-                    callQuery.$gte = parseInt(from);
-                }
-                if (to !== undefined && to !== "") {
-                    callQuery.$lte = parseInt(to);
-                }
-                if (Object.keys(callQuery).length > 0) {
-                    query.callCount = callQuery;
-                }
+                if (from !== undefined && from !== "") callQuery.$gte = parseInt(from);
+                if (to !== undefined && to !== "") callQuery.$lte = parseInt(to);
+                if (Object.keys(callQuery).length > 0) query.callCount = callQuery;
                 break;
             }
 
             case "source": {
-                // Source may be in top-level field or fieldData — check both
+                if (operator === 'is_empty') {
+                    andConditions.push({
+                        $and: [
+                            { $or: [{ source: null }, { source: '' }, { source: { $exists: false } }] },
+                            { $nor: [{ fieldData: { $elemMatch: { name: { $regex: /^source$/i }, values: { $gt: [] } } } }] },
+                        ],
+                    });
+                    break;
+                }
                 const escaped = (value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const sourceRegex = new RegExp(`^${escaped}$`, 'i');
-                if (operator === "is") {
+                if (operator === 'is_include') {
+                    andConditions.push({
+                        $or: [
+                            { source: { $regex: escaped, $options: 'i' } },
+                            { fieldData: { $elemMatch: { name: { $regex: /^source$/i }, values: { $elemMatch: { $regex: escaped, $options: 'i' } } } } },
+                        ],
+                    });
+                } else if (operator === 'is_not') {
+                    const rx = new RegExp(`^${escaped}$`, 'i');
+                    andConditions.push({
+                        $nor: [
+                            { source: { $regex: rx } },
+                            { fieldData: { $elemMatch: { name: { $regex: /^source$/i }, values: { $regex: rx } } } },
+                        ],
+                    });
+                } else {
+                    const sourceRegex = new RegExp(`^${escaped}$`, 'i');
                     andConditions.push({
                         $or: [
                             { source: { $regex: sourceRegex } },
                             { fieldData: { $elemMatch: { name: { $regex: /^source$/i }, values: { $regex: sourceRegex } } } },
                         ],
                     });
-                } else {
-                    andConditions.push({
-                        source: { $not: sourceRegex },
-                        fieldData: { $not: { $elemMatch: { name: { $regex: /^source$/i }, values: { $regex: sourceRegex } } } },
-                    });
                 }
                 break;
             }
 
             case "campaign": {
-                // Campaign: frontend sends mongo _id, leads store external campaign IDs
                 const Campaign = require("../models/Campaign");
-                const campaign = await Campaign.findById(value).lean();
-                const possibleIds = [value];
-                if (campaign) {
-                    if (campaign._id) possibleIds.push(campaign._id.toString());
-                    if (campaign.integration?.externalId) possibleIds.push(campaign.integration.externalId);
-                    if (campaign.integration?.metaCampaignId) possibleIds.push(campaign.integration.metaCampaignId);
+                if (operator === 'is_empty') {
+                    andConditions.push({ $or: [{ campaignId: null }, { campaignId: '' }, { campaignId: { $exists: false } }] });
+                    break;
                 }
-                const uniqueIds = [...new Set(possibleIds.filter(Boolean))];
-                if (operator === "is") {
-                    query.campaignId = { $in: uniqueIds };
-                } else {
-                    query.campaignId = { $nin: uniqueIds };
+                const campaignList = values || (value ? value.split(',').filter(Boolean) : []);
+                if (campaignList.length === 0) break;
+                const allPossibleIds = [];
+                for (const cid of campaignList) {
+                    const camp = await Campaign.findById(cid).lean();
+                    const ids = [cid];
+                    if (camp) {
+                        if (camp._id) ids.push(camp._id.toString());
+                        if (camp.integration?.externalId) ids.push(camp.integration.externalId);
+                        if (camp.integration?.metaCampaignId) ids.push(camp.integration.metaCampaignId);
+                    }
+                    allPossibleIds.push(...ids);
                 }
+                const uniqueIds = [...new Set(allPossibleIds.filter(Boolean))];
+                query.campaignId = operator === "is_not" ? { $nin: uniqueIds } : { $in: uniqueIds };
                 break;
             }
 
             case "dateRange":
-                if (from && to) {
-                    query.createdTime = {
-                        $gte: new Date(from),
-                        $lte: new Date(to),
-                    };
+                if (operator === 'after' && from) {
+                    query.createdTime = { $gt: new Date(from) };
+                } else if (operator === 'before' && to) {
+                    query.createdTime = { $lt: new Date(to) };
+                } else if (from && to) {
+                    query.createdTime = { $gte: new Date(from), $lte: new Date(to) };
                 }
                 break;
+
+            // OPD Booking Status — stored in opBookings[].status
+            case "opdStatus": {
+                if (operator === 'is_empty') {
+                    andConditions.push({ $or: [{ opBookings: null }, { opBookings: { $exists: false } }, { opBookings: { $size: 0 } }] });
+                    break;
+                }
+                const escaped = (value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                if (operator === 'is_include') {
+                    andConditions.push({ opBookings: { $elemMatch: { status: { $regex: escaped, $options: 'i' } } } });
+                } else if (operator === 'is_not') {
+                    andConditions.push({ $nor: [{ opBookings: { $elemMatch: { status: { $regex: new RegExp(`^${escaped}$`, 'i') } } } }] });
+                } else {
+                    andConditions.push({ opBookings: { $elemMatch: { status: { $regex: new RegExp(`^${escaped}$`, 'i') } } } });
+                }
+                break;
+            }
+
+            // IPD Booking Status — stored in ipBookings[].status
+            case "ipdStatus": {
+                if (operator === 'is_empty') {
+                    andConditions.push({ $or: [{ ipBookings: null }, { ipBookings: { $exists: false } }, { ipBookings: { $size: 0 } }] });
+                    break;
+                }
+                const escaped = (value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                if (operator === 'is_include') {
+                    andConditions.push({ ipBookings: { $elemMatch: { status: { $regex: escaped, $options: 'i' } } } });
+                } else if (operator === 'is_not') {
+                    andConditions.push({ $nor: [{ ipBookings: { $elemMatch: { status: { $regex: new RegExp(`^${escaped}$`, 'i') } } } }] });
+                } else {
+                    andConditions.push({ ipBookings: { $elemMatch: { status: { $regex: new RegExp(`^${escaped}$`, 'i') } } } });
+                }
+                break;
+            }
+
+            // OPD Booking Date — IST-aware day bounds on opBookings[].date
+            case "opdDate": {
+                if (!from) break;
+                const { start: opdStart, end: opdEnd } = dayBoundsIST(from);
+                if (operator === 'after') {
+                    andConditions.push({ opBookings: { $elemMatch: { date: { $gt: opdEnd } } } });
+                } else if (operator === 'before') {
+                    andConditions.push({ opBookings: { $elemMatch: { date: { $lt: opdStart } } } });
+                } else if (operator === 'custom' && to) {
+                    const { end: toEnd } = dayBoundsIST(to);
+                    andConditions.push({ opBookings: { $elemMatch: { date: { $gte: opdStart, $lte: toEnd } } } });
+                } else {
+                    andConditions.push({ opBookings: { $elemMatch: { date: { $gte: opdStart, $lte: opdEnd } } } });
+                }
+                break;
+            }
+
+            // IPD Booking Date — IST-aware day bounds on ipBookings[].date
+            case "ipdDate": {
+                if (!from) break;
+                const { start: ipdStart, end: ipdEnd } = dayBoundsIST(from);
+                if (operator === 'after') {
+                    andConditions.push({ ipBookings: { $elemMatch: { date: { $gt: ipdEnd } } } });
+                } else if (operator === 'before') {
+                    andConditions.push({ ipBookings: { $elemMatch: { date: { $lt: ipdStart } } } });
+                } else if (operator === 'custom' && to) {
+                    const { end: toEnd } = dayBoundsIST(to);
+                    andConditions.push({ ipBookings: { $elemMatch: { date: { $gte: ipdStart, $lte: toEnd } } } });
+                } else {
+                    andConditions.push({ ipBookings: { $elemMatch: { date: { $gte: ipdStart, $lte: ipdEnd } } } });
+                }
+                break;
+            }
 
             default:
                 // Handle custom fields — flexible name matching
@@ -160,17 +278,22 @@ const buildFilterQuery = async (filters = []) => {
                         fieldName.replace(/_/g, ' '),
                         fieldName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
                     ];
-                    const escaped = (value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const elemMatch = {
-                        name: { $in: nameVariants },
-                        values: { $regex: new RegExp(`^${escaped}$`, 'i') },
-                    };
-                    if (operator === "is_not" || operator === "is not") {
-                        andConditions.push({
-                            $nor: [{ fieldData: { $elemMatch: elemMatch } }],
-                        });
-                    } else {
-                        andConditions.push({ fieldData: { $elemMatch: elemMatch } });
+                    if (operator === 'is_empty') {
+                        andConditions.push({ $nor: [{ fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $exists: true, $not: { $size: 0 } } } } }] });
+                    } else if (operator === 'is_include' && value) {
+                        const esc = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        andConditions.push({ fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $elemMatch: { $regex: esc, $options: 'i' } } } } });
+                    } else if (value) {
+                        const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const elemMatch = {
+                            name: { $in: nameVariants },
+                            values: { $regex: new RegExp(`^${escaped}$`, 'i') },
+                        };
+                        if (operator === "is_not" || operator === "is not") {
+                            andConditions.push({ $nor: [{ fieldData: { $elemMatch: elemMatch } }] });
+                        } else {
+                            andConditions.push({ fieldData: { $elemMatch: elemMatch } });
+                        }
                     }
                 }
                 break;

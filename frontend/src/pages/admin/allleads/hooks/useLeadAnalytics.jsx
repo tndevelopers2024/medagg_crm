@@ -36,8 +36,15 @@ export default function useLeadAnalytics({
   customFrom,
   customTo,
   followupFilter,
+  followupFrom,
+  followupTo,
   customFieldFilters,
   filterOperators = {},
+  filterIncludeTexts = {},
+  opdDate,
+  opdDateTo,
+  ipdDate,
+  ipdDateTo,
   fieldConfigs,
   notify,
 }) {
@@ -101,59 +108,137 @@ export default function useLeadAnalytics({
 
   const mergedAnalyticsFilters = useMemo(() => {
     const af = [...chartDrillFilters];
-    if (Array.isArray(leadStatus) && leadStatus.length > 0) {
-      af.push({ id: "page_status", type: "leadStatus", operator: filterOperators.status || "is", value: leadStatus.join(',') });
+    const ops = filterOperators;
+    const inc = filterIncludeTexts;
+
+    // Lead Status
+    if (ops.status === 'is_empty') {
+      af.push({ id: "page_status", type: "leadStatus", operator: "is_empty" });
+    } else if (ops.status === 'is_include' && inc.status) {
+      af.push({ id: "page_status", type: "leadStatus", operator: "is_include", value: inc.status });
+    } else if (Array.isArray(leadStatus) && leadStatus.length > 0) {
+      af.push({ id: "page_status", type: "leadStatus", operator: ops.status || "is", values: leadStatus });
     }
-    if (Array.isArray(callerFilter) && callerFilter.length > 0) {
-      af.push({ id: "page_caller", type: "assignee", operator: filterOperators.caller || "is", value: callerFilter.join(',') });
+
+    // Assignee
+    if (ops.caller === 'is_empty') {
+      af.push({ id: "page_caller", type: "assignee", operator: "is_empty" });
+    } else if (Array.isArray(callerFilter) && callerFilter.length > 0) {
+      af.push({ id: "page_caller", type: "assignee", operator: ops.caller || "is", values: callerFilter });
     }
-    if (source !== "All Sources") {
-      af.push({ id: "page_source", type: "source", operator: filterOperators.source || "is", value: source });
+
+    // Source
+    if (ops.source === 'is_empty') {
+      af.push({ id: "page_source", type: "source", operator: "is_empty" });
+    } else if (ops.source === 'is_include' && inc.source) {
+      af.push({ id: "page_source", type: "source", operator: "is_include", value: inc.source });
+    } else if (source !== "All Sources") {
+      af.push({ id: "page_source", type: "source", operator: ops.source || "is", value: source });
     }
-    if (opdStatus !== "OPD Status") {
-      af.push({ id: "page_opd", type: "custom_opd_status", operator: filterOperators.opd || "is", value: opdStatus });
+
+    // OPD Status — stored in opBookings[].status, not fieldData
+    if (ops.opd === 'is_empty') {
+      af.push({ id: "page_opd", type: "opdStatus", operator: "is_empty" });
+    } else if (ops.opd === 'is_include' && inc.opd) {
+      af.push({ id: "page_opd", type: "opdStatus", operator: "is_include", value: inc.opd });
+    } else if (opdStatus !== "OPD Status") {
+      af.push({ id: "page_opd", type: "opdStatus", operator: ops.opd || "is", value: opdStatus });
     }
-    if (ipdStatus !== "IPD Status") {
-      af.push({ id: "page_ipd", type: "custom_ipd_status", operator: filterOperators.ipd || "is", value: ipdStatus });
+
+    // IPD Status — stored in ipBookings[].status, not fieldData
+    if (ops.ipd === 'is_empty') {
+      af.push({ id: "page_ipd", type: "ipdStatus", operator: "is_empty" });
+    } else if (ops.ipd === 'is_include' && inc.ipd) {
+      af.push({ id: "page_ipd", type: "ipdStatus", operator: "is_include", value: inc.ipd });
+    } else if (ipdStatus !== "IPD Status") {
+      af.push({ id: "page_ipd", type: "ipdStatus", operator: ops.ipd || "is", value: ipdStatus });
     }
-    if (diagnostics !== "Diagnostics") {
-      af.push({ id: "page_diag", type: "custom_diagnostic", operator: filterOperators.diag || "is", value: diagnostics });
+
+    // Diagnostics — stored in fieldData
+    if (ops.diag === 'is_empty') {
+      af.push({ id: "page_diag", type: "custom_diagnostic", operator: "is_empty" });
+    } else if (ops.diag === 'is_include' && inc.diag) {
+      af.push({ id: "page_diag", type: "custom_diagnostic", operator: "is_include", value: inc.diag });
+    } else if (diagnostics !== "Diagnostics") {
+      af.push({ id: "page_diag", type: "custom_diagnostic", operator: ops.diag || "is", value: diagnostics });
     }
-    if (Array.isArray(campaignFilter) && campaignFilter.length > 0) {
-      af.push({ id: "page_campaign", type: "campaign", operator: filterOperators.campaign || "is", value: campaignFilter.join(',') });
+
+    // Campaign
+    if (ops.campaign === 'is_empty') {
+      af.push({ id: "page_campaign", type: "campaign", operator: "is_empty" });
+    } else if (Array.isArray(campaignFilter) && campaignFilter.length > 0) {
+      af.push({ id: "page_campaign", type: "campaign", operator: ops.campaign || "is", values: campaignFilter });
     }
-    // Date filter — convert dateMode to dateRange filter for analytics
-    if (dateMode && dateMode !== "7d") {
+
+    // Date filter — convert dateMode/operators to dateRange filter for analytics
+    const dateOp = ops.date;
+    if (dateOp === 'after' && customFrom) {
+      af.push({ id: "page_date", type: "dateRange", operator: "after", from: new Date(`${customFrom}T00:00:00+05:30`).toISOString() });
+    } else if (dateOp === 'before' && customTo) {
+      af.push({ id: "page_date", type: "dateRange", operator: "before", to: new Date(`${customTo}T23:59:59.999+05:30`).toISOString() });
+    } else if (dateMode) {
       const now = new Date();
       const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.toISOString(); };
       const dayEnd = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x.toISOString(); };
-
       if (dateMode === "Today") {
         af.push({ id: "page_date", type: "dateRange", from: dayStart(now), to: dayEnd(now) });
       } else if (dateMode === "Yesterday") {
         const y = new Date(now); y.setDate(y.getDate() - 1);
         af.push({ id: "page_date", type: "dateRange", from: dayStart(y), to: dayEnd(y) });
+      } else if (dateMode === "7d") {
+        const d = new Date(now); d.setDate(d.getDate() - 6);
+        af.push({ id: "page_date", type: "dateRange", from: dayStart(d), to: dayEnd(now) });
       } else if (dateMode === "30d") {
         const d = new Date(now); d.setDate(d.getDate() - 29);
         af.push({ id: "page_date", type: "dateRange", from: dayStart(d), to: dayEnd(now) });
       } else if (dateMode === "Custom" && customFrom && customTo) {
-        af.push({ id: "page_date", type: "dateRange", from: new Date(`${customFrom}T00:00:00`).toISOString(), to: new Date(`${customTo}T23:59:59.999`).toISOString() });
+        af.push({ id: "page_date", type: "dateRange", from: new Date(`${customFrom}T00:00:00+05:30`).toISOString(), to: new Date(`${customTo}T23:59:59.999+05:30`).toISOString() });
       }
     }
+
     // Follow-up filter
-    if (followupFilter && followupFilter !== "All") {
-      af.push({ id: "page_followup", type: "followUp", operator: filterOperators.followup || "is", value: followupFilter });
+    const followupOp = ops.followup;
+    if (followupOp === 'is_empty') {
+      af.push({ id: "page_followup", type: "followUp", operator: "is_empty" });
+    } else if (followupOp === 'after' && followupFrom) {
+      af.push({ id: "page_followup", type: "followUp", operator: "after", from: followupFrom });
+    } else if (followupOp === 'before' && followupTo) {
+      af.push({ id: "page_followup", type: "followUp", operator: "before", to: followupTo });
+    } else if (followupFilter && followupFilter !== "All") {
+      const fEntry = { id: "page_followup", type: "followUp", operator: followupOp || "is", value: followupFilter };
+      if (followupFilter === "Custom" && followupFrom && followupTo) {
+        fEntry.from = followupFrom;
+        fEntry.to = followupTo;
+      }
+      af.push(fEntry);
     }
+
+    // OPD Date filter
+    if (opdDate) {
+      af.push({ id: "page_opdDate", type: "opdDate", operator: ops.opdDate || "is", from: opdDate, to: ops.opdDate === 'custom' ? (opdDateTo || '') : '' });
+    }
+
+    // IPD Date filter
+    if (ipdDate) {
+      af.push({ id: "page_ipdDate", type: "ipdDate", operator: ops.ipdDate || "is", from: ipdDate, to: ops.ipdDate === 'custom' ? (ipdDateTo || '') : '' });
+    }
+
     // Custom field filters from "Add Condition"
     if (customFieldFilters) {
       for (const [fieldName, { value, operator }] of Object.entries(customFieldFilters)) {
-        if (value) {
-          af.push({ id: `page_custom_${fieldName}`, type: `custom_${fieldName}`, operator: operator || "is", value });
+        if (value || operator === 'is_empty') {
+          af.push({ id: `page_custom_${fieldName}`, type: `custom_${fieldName}`, operator: operator || "is", value: value || '' });
         }
       }
     }
+
     return af;
-  }, [chartDrillFilters, leadStatus, callerFilter, source, opdStatus, ipdStatus, diagnostics, campaignFilter, dateMode, customFrom, customTo, followupFilter, customFieldFilters, filterOperators]);
+  }, [
+    chartDrillFilters, leadStatus, callerFilter, source, opdStatus, ipdStatus, diagnostics, campaignFilter,
+    dateMode, customFrom, customTo, followupFilter, followupFrom, followupTo,
+    customFieldFilters, filterOperators, filterIncludeTexts,
+    opdDate, opdDateTo, ipdDate, ipdDateTo,
+  ]);
 
   const loadChartData = useCallback(async () => {
     try {

@@ -10,24 +10,39 @@ import { parseLead } from "../../../../utils/leadHelpers";
  */
 export function buildQueryParams(filters, page, pageSize) {
   const params = { page, limit: pageSize };
+  const ops = filters.filterOperators || {};
 
-  if (filters.dateMode) {
-    params.dateMode = filters.dateMode;
-  }
-  if (filters.dateMode === "Custom") {
+  const dateOp = ops.date;
+  if (dateOp === 'after') {
+    params.dateMode = 'After';
     if (filters.customFrom) params.from = filters.customFrom;
+  } else if (dateOp === 'before') {
+    params.dateMode = 'Before';
     if (filters.customTo) params.to = filters.customTo;
+  } else if (filters.dateMode) {
+    params.dateMode = filters.dateMode;
+    if (filters.dateMode === "Custom") {
+      if (filters.customFrom) params.from = filters.customFrom;
+      if (filters.customTo) params.to = filters.customTo;
+    }
   }
-  if (filters.source && filters.source !== "All Sources") {
+  if (ops.source !== 'is_include' && filters.source && filters.source !== "All Sources") {
     params.source = filters.source;
   }
   if (filters.callerFilter && filters.callerFilter.length > 0) {
     params.assignedTo = filters.callerFilter.join(',');
   }
-  if (filters.leadStatus && filters.leadStatus.length > 0) {
+  if (ops.status !== 'is_include' && filters.leadStatus && filters.leadStatus.length > 0) {
     params.status = filters.leadStatus.join(',');
   }
-  if (filters.followupFilter && filters.followupFilter !== "All") {
+  const followupOp = ops.followup;
+  if (followupOp === 'after') {
+    params.followupOp = 'after';
+    if (filters.followupFrom) params.followupFrom = filters.followupFrom;
+  } else if (followupOp === 'before') {
+    params.followupOp = 'before';
+    if (filters.followupTo) params.followupTo = filters.followupTo;
+  } else if (filters.followupFilter && filters.followupFilter !== "All") {
     params.followup = filters.followupFilter;
     if (filters.followupFilter === "Custom") {
       if (filters.followupFrom) params.followupFrom = filters.followupFrom;
@@ -40,32 +55,69 @@ export function buildQueryParams(filters, page, pageSize) {
   if (filters.debouncedSearch && filters.debouncedSearch.trim()) {
     params.q = filters.debouncedSearch.trim();
   }
-  if (filters.opdStatus && filters.opdStatus !== "OPD Status") {
+  if (ops.opd !== 'is_include' && filters.opdStatus && filters.opdStatus !== "OPD Status") {
     params.opdStatus = filters.opdStatus;
   }
-  if (filters.ipdStatus && filters.ipdStatus !== "IPD Status") {
+  if (ops.ipd !== 'is_include' && filters.ipdStatus && filters.ipdStatus !== "IPD Status") {
     params.ipdStatus = filters.ipdStatus;
   }
-  if (filters.diagnostics && filters.diagnostics !== "Diagnostics") {
+  if (ops.diag !== 'is_include' && filters.diagnostics && filters.diagnostics !== "Diagnostics") {
     params.diagnostics = filters.diagnostics;
   }
+  if (filters.opdDate) {
+    params.opdDate = filters.opdDate;
+    if (ops.opdDate && ops.opdDate !== 'is') {
+      params.opdDateOp = ops.opdDate;
+      if (ops.opdDate === 'custom' && filters.opdDateTo) params.opdDateTo = filters.opdDateTo;
+    }
+  }
+  if (filters.ipdDate) {
+    params.ipdDate = filters.ipdDate;
+    if (ops.ipdDate && ops.ipdDate !== 'is') {
+      params.ipdDateOp = ops.ipdDate;
+      if (ops.ipdDate === 'custom' && filters.ipdDateTo) params.ipdDateTo = filters.ipdDateTo;
+    }
+  }
 
-  // Standard filter operators — send *Op params when operator is 'is_not'
-  const ops = filters.filterOperators || {};
-  if (ops.status === 'is_not' && params.status) params.statusOp = 'is_not';
-  if (ops.source === 'is_not' && params.source) params.sourceOp = 'is_not';
-  if (ops.caller === 'is_not' && params.assignedTo) params.assignedToOp = 'is_not';
-  if (ops.campaign === 'is_not' && params.campaignId) params.campaignOp = 'is_not';
-  if (ops.followup === 'is_not' && params.followup) params.followupOp = 'is_not';
-  if (ops.opd === 'is_not' && params.opdStatus) params.opdStatusOp = 'is_not';
-  if (ops.ipd === 'is_not' && params.ipdStatus) params.ipdStatusOp = 'is_not';
-  if (ops.diag === 'is_not' && params.diagnostics) params.diagnosticsOp = 'is_not';
+  // Standard filter operators — send *Op params (ops and inc declared above)
+  const inc = filters.filterIncludeTexts || {};
+
+  if (ops.status === 'is_empty') { params.statusOp = 'is_empty'; }
+  else if (ops.status === 'is_include' && inc.status) { params.status = inc.status; params.statusOp = 'is_include'; }
+  else if (ops.status === 'is_not' && params.status) { params.statusOp = 'is_not'; }
+
+  if (ops.source === 'is_empty') { params.sourceOp = 'is_empty'; }
+  else if (ops.source === 'is_include' && inc.source) { params.source = inc.source; params.sourceOp = 'is_include'; }
+  else if (ops.source === 'is_not' && params.source) { params.sourceOp = 'is_not'; }
+
+  if (ops.caller === 'is_empty') { params.assignedToOp = 'is_empty'; }
+  else if (ops.caller === 'is_not' && params.assignedTo) { params.assignedToOp = 'is_not'; }
+
+  if (ops.campaign === 'is_empty') { params.campaignOp = 'is_empty'; }
+  else if (ops.campaign === 'is_not' && params.campaignId) { params.campaignOp = 'is_not'; }
+
+  if (!['after', 'before'].includes(ops.followup)) {
+    if (ops.followup === 'is_empty') { params.followupOp = 'is_empty'; }
+    else if (ops.followup === 'is_not' && params.followup) { params.followupOp = 'is_not'; }
+  }
+
+  if (ops.opd === 'is_empty') { params.opdStatusOp = 'is_empty'; }
+  else if (ops.opd === 'is_include' && inc.opd) { params.opdStatus = inc.opd; params.opdStatusOp = 'is_include'; }
+  else if (ops.opd === 'is_not' && params.opdStatus) { params.opdStatusOp = 'is_not'; }
+
+  if (ops.ipd === 'is_empty') { params.ipdStatusOp = 'is_empty'; }
+  else if (ops.ipd === 'is_include' && inc.ipd) { params.ipdStatus = inc.ipd; params.ipdStatusOp = 'is_include'; }
+  else if (ops.ipd === 'is_not' && params.ipdStatus) { params.ipdStatusOp = 'is_not'; }
+
+  if (ops.diag === 'is_empty') { params.diagnosticsOp = 'is_empty'; }
+  else if (ops.diag === 'is_include' && inc.diag) { params.diagnostics = inc.diag; params.diagnosticsOp = 'is_include'; }
+  else if (ops.diag === 'is_not' && params.diagnostics) { params.diagnosticsOp = 'is_not'; }
 
   // Custom field filters — sent as field__<fieldName>=<value> and fieldOp__<fieldName>=<operator>
   if (filters.customFieldFilters) {
     for (const [fieldName, { value, operator }] of Object.entries(filters.customFieldFilters)) {
-      if (value) {
-        params[`field__${fieldName}`] = value;
+      if (value || operator === 'is_empty') {
+        params[`field__${fieldName}`] = operator === 'is_empty' ? '__is_empty__' : value;
         if (operator && operator !== 'is') {
           params[`fieldOp__${fieldName}`] = operator;
         }

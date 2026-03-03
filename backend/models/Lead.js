@@ -38,6 +38,7 @@ const leadSchema = new mongoose.Schema(
     // TelCRM Lead ID (used to link activity imports)
     telcrmLeadId: { type: String, unique: true, sparse: true, index: true },
     formId: { type: String, index: true },
+    batch: { type: String, default: "" }, // Form name from Meta (e.g. "Varicocele - South India (Dec'25) - ENG - 09/12/25")
     campaignId: String,
     adId: String,
     adsetId: String,

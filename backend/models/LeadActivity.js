@@ -22,6 +22,8 @@ const LeadActivitySchema = new mongoose.Schema(
         "ip_booking_remove",
         "call_logged",
         "recording_uploaded",
+        // WhatsApp sent from modal
+        "whatsapp_sent",
         // TelCRM imported activities
         "telcrm_call",
         "telcrm_note",

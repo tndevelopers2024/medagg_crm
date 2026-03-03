@@ -1,3 +1,25 @@
+/** Format a date as DD/MM/YYYY (Indian format) */
+export const formatDateIN = (date) => {
+    if (!date) return '—';
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '—';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${d.getFullYear()}`;
+};
+
+/** Format a date+time as DD/MM/YYYY HH:mm (Indian format, 24-hour) */
+export const formatDateTimeIN = (date) => {
+    if (!date) return '—';
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '—';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${dd}/${mm}/${d.getFullYear()} ${hh}:${min}`;
+};
+
 export const formatPhoneNumber = (phone) => {
     if (!phone) return "—";
     const cleaned = String(phone).replace(/\D/g, "");

@@ -17,10 +17,14 @@ const DEFAULTS = {
   diag: "Diagnostics",
   campaign: [],
   search: "",
+  opdDate: "",
+  opdDateTo: "",
+  ipdDate: "",
+  ipdDateTo: "",
 };
 
 // All URL param keys owned by this hook — used to avoid overwriting analytics params
-const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'followup', 'followupFrom', 'followupTo', 'opd', 'ipd', 'diag', 'campaign', 'search', 'ops', 'cf'];
+const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'followup', 'followupFrom', 'followupTo', 'opd', 'ipd', 'diag', 'campaign', 'search', 'ops', 'cf', 'inc', 'opdDate', 'opdDateTo', 'ipdDate', 'ipdDateTo'];
 
 // Resolve legacy `view` param and special `date` values into concrete filter state
 function resolveInitialParams(searchParams) {
@@ -51,6 +55,12 @@ function resolveInitialParams(searchParams) {
   const cfParam = searchParams.get('cf');
   if (cfParam) {
     try { raw.cf = JSON.parse(cfParam); } catch (e) { /* ignore malformed */ }
+  }
+
+  // Parse include texts (JSON-encoded)
+  const incParam = searchParams.get('inc');
+  if (incParam) {
+    try { raw.inc = JSON.parse(incParam); } catch (e) { /* ignore malformed */ }
   }
 
   // Legacy view param support
@@ -105,9 +115,16 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     Array.isArray(initialParams.campaign) ? initialParams.campaign : DEFAULTS.campaign
   );
   const [search, setSearch] = useState(initialParams.search || DEFAULTS.search);
+  const [opdDate, setOpdDate] = useState(initialParams.opdDate || '');
+  const [opdDateTo, setOpdDateTo] = useState(initialParams.opdDateTo || '');
+  const [ipdDate, setIpdDate] = useState(initialParams.ipdDate || '');
+  const [ipdDateTo, setIpdDateTo] = useState(initialParams.ipdDateTo || '');
 
-  // Filter operators — { filterKey: 'is' | 'is_not' }
+  // Filter operators — { filterKey: 'is' | 'is_not' | 'is_empty' | 'is_include' }
   const [filterOperators, setFilterOperators] = useState(initialParams.ops || {});
+
+  // Include texts — { filterKey: string } — for IS INCLUDE operator
+  const [filterIncludeTexts, setFilterIncludeTexts] = useState(initialParams.inc || {});
 
   const setFilterOperator = useCallback((key, op) => {
     setFilterOperators(prev => ({ ...prev, [key]: op }));
@@ -115,6 +132,15 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
 
   const resetFilterOperators = useCallback(() => {
     setFilterOperators({});
+  }, []);
+
+  const setFilterIncludeText = useCallback((key, text) => {
+    setFilterIncludeTexts(prev => {
+      const next = { ...prev };
+      if (text) next[key] = text;
+      else delete next[key];
+      return next;
+    });
   }, []);
 
   // Custom field filters — { fieldName: { value, operator } }
@@ -164,6 +190,10 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if (diagnostics !== DEFAULTS.diag) params.diag = diagnostics;
     if (campaignFilter.length > 0) params.campaign = campaignFilter.join(',');
     if (search !== DEFAULTS.search) params.search = search;
+    if (opdDate) params.opdDate = opdDate;
+    if (opdDateTo) params.opdDateTo = opdDateTo;
+    if (ipdDate) params.ipdDate = ipdDate;
+    if (ipdDateTo) params.ipdDateTo = ipdDateTo;
 
     // filterOperators — only include non-default ('is') entries
     const nonDefaultOps = Object.entries(filterOperators).filter(([, v]) => v && v !== 'is');
@@ -174,6 +204,11 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     // customFieldFilters — JSON-encoded
     if (Object.keys(customFieldFilters).length > 0) {
       params.cf = JSON.stringify(customFieldFilters);
+    }
+
+    // filterIncludeTexts — JSON-encoded
+    if (Object.keys(filterIncludeTexts).length > 0) {
+      params.inc = JSON.stringify(filterIncludeTexts);
     }
 
     // Compare only filter-owned params to avoid false positives from analytics params
@@ -197,7 +232,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
   }, [
     dateMode, customFrom, customTo, source, callerFilter, leadStatus,
     followupFilter, followupFrom, followupTo, opdStatus, ipdStatus, diagnostics, campaignFilter, search,
-    filterOperators, customFieldFilters,
+    filterOperators, customFieldFilters, filterIncludeTexts, opdDate, opdDateTo, ipdDate, ipdDateTo,
     setSearchParams, searchParams
   ]);
 
@@ -227,6 +262,10 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if ((params.ipd || "IPD Status") !== ipdStatus) setIpdStatus(params.ipd || "IPD Status");
     if ((params.diag || "Diagnostics") !== diagnostics) setDiagnostics(params.diag || "Diagnostics");
     if ((params.search || "") !== search) setSearch(params.search || "");
+    if ((params.opdDate || "") !== opdDate) setOpdDate(params.opdDate || "");
+    if ((params.opdDateTo || "") !== opdDateTo) setOpdDateTo(params.opdDateTo || "");
+    if ((params.ipdDate || "") !== ipdDate) setIpdDate(params.ipdDate || "");
+    if ((params.ipdDateTo || "") !== ipdDateTo) setIpdDateTo(params.ipdDateTo || "");
 
     // filterOperators
     const newOps = params.ops || {};
@@ -235,6 +274,10 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     // customFieldFilters
     const newCf = params.cf || {};
     if (JSON.stringify(newCf) !== JSON.stringify(customFieldFilters)) setCustomFieldFilters(newCf);
+
+    // filterIncludeTexts
+    const newInc = params.inc || {};
+    if (JSON.stringify(newInc) !== JSON.stringify(filterIncludeTexts)) setFilterIncludeTexts(newInc);
   }, [searchParams]); // This effect listens to URL changes
 
   // Stable filterState object for the data hook (only changes when actual filter values change)
@@ -255,10 +298,15 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     debouncedSearch,
     customFieldFilters,
     filterOperators,
+    filterIncludeTexts,
+    opdDate,
+    opdDateTo,
+    ipdDate,
+    ipdDateTo,
   }), [
     dateMode, customFrom, customTo, source, callerFilter, leadStatus,
     followupFilter, followupFrom, followupTo, opdStatus, ipdStatus, diagnostics, campaignFilter, debouncedSearch,
-    customFieldFilters, filterOperators,
+    customFieldFilters, filterOperators, filterIncludeTexts, opdDate, opdDateTo, ipdDate, ipdDateTo,
   ]);
 
   // Options derived from filterMeta and configs (not from scanning all leads)
@@ -279,47 +327,9 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     return [...(filterMeta?.statuses || [])];
   }, [fieldConfigs, leadStages, filterMeta?.statuses]);
 
-  const opdOptions = useMemo(() => {
-    const opdField = fieldConfigs.find(f => {
-      const fn = (f.fieldName || '').toLowerCase();
-      const dl = (f.displayLabel || '').toLowerCase();
-      return ['opd_status', 'opdstatus', 'opd'].includes(fn) || dl.includes('opd');
-    });
-    if (opdField && opdField.options && opdField.options.length > 0) {
-      return ["OPD Status", ...opdField.options];
-    }
-    // Fallback: check filterMeta.fieldOptions for any OPD-related key
-    const fo = filterMeta?.fieldOptions || {};
-    for (const [key, opts] of Object.entries(fo)) {
-      const k = key.toLowerCase();
-      if ((['opd_status', 'opdstatus', 'opd'].includes(k) || k.includes('opd')) && opts.length > 0) {
-        return ["OPD Status", ...opts];
-      }
-    }
-    // Default hardcoded if no config found
-    return ["OPD Status", "booked", "done", "pending", "cancelled"];
-  }, [fieldConfigs, filterMeta?.fieldOptions]);
-
-  const ipdOptions = useMemo(() => {
-    const ipdField = fieldConfigs.find(f => {
-      const fn = (f.fieldName || '').toLowerCase();
-      const dl = (f.displayLabel || '').toLowerCase();
-      return ['ipd_status', 'ipdstatus', 'ipd'].includes(fn) || dl.includes('ipd');
-    });
-    if (ipdField && ipdField.options && ipdField.options.length > 0) {
-      return ["IPD Status", ...ipdField.options];
-    }
-    // Fallback: check filterMeta.fieldOptions for any OPD-related key
-    const fo = filterMeta?.fieldOptions || {};
-    for (const [key, opts] of Object.entries(fo)) {
-      const k = key.toLowerCase();
-      if ((['ipd_status', 'ipdstatus', 'ipd'].includes(k) || k.includes('ipd')) && opts.length > 0) {
-        return ["IPD Status", ...opts];
-      }
-    }
-    // Default hardcoded if no config found
-    return ["IPD Status", "booked", "done", "pending", "cancelled"];
-  }, [fieldConfigs, filterMeta?.fieldOptions]);
+  // OPD/IPD booking statuses — always hardcoded to match the bookingStatusEnum in the Lead model
+  const opdOptions = useMemo(() => ["OPD Status", "Booked", "Done", "Cancelled"], []);
+  const ipdOptions = useMemo(() => ["IPD Status", "Booked", "Done", "Cancelled"], []);
 
   const diagOptions = useMemo(() => {
     const diagField = fieldConfigs.find(f => {
@@ -377,6 +387,11 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     setSearch(DEFAULTS.search);
     setCustomFieldFilters({});
     setFilterOperators({});
+    setFilterIncludeTexts({});
+    setOpdDate('');
+    setOpdDateTo('');
+    setIpdDate('');
+    setIpdDateTo('');
   }, []);
 
   return {
@@ -399,6 +414,11 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     debouncedSearch,
     customFieldFilters, setCustomFieldFilter, removeCustomFieldFilter,
     filterOperators, setFilterOperator, resetFilterOperators,
+    filterIncludeTexts, setFilterIncludeText,
+    opdDate, setOpdDate,
+    opdDateTo, setOpdDateTo,
+    ipdDate, setIpdDate,
+    ipdDateTo, setIpdDateTo,
     // options
     sourceOptions,
     leadStatusOptions,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
 import {
   updateLeadDetails,
@@ -32,58 +32,65 @@ export default function useLeadActions({
   const [laterDate, setLaterDate] = useState("");
   const [laterTime, setLaterTime] = useState("10:00");
 
-  const handleSave = async () => {
+  // Use a ref to always have latest data for auto-save
+  const latestDataRef = useRef({ leadData, notes, status });
+  latestDataRef.current = { leadData, notes, status };
+
+  const handleSave = useCallback(async (silent = false) => {
     if (!id) return;
 
-    const isInitialNew = ["new", "new lead"].includes(
-      (initialStatus || "").toLowerCase()
-    );
-    if (isCaller && isInitialNew && !hasStatusChanged && !newBookingAdded) {
-      toast.error("Please update the lead status before saving.");
-      return;
-    }
+    // Use latest data from ref for silent saves, closure data for manual saves
+    const currentData = silent ? latestDataRef.current : { leadData, notes, status };
 
-    // Validate required fields
-    const missingFields = [];
-
-    if (combinedFields && Array.isArray(combinedFields)) {
-      combinedFields.forEach((field) => {
-        if (field.isRequired) {
-          const value = leadData[field.fieldName];
-          if (!value || String(value).trim() === "") {
-            missingFields.push(field.displayLabel || field.fieldName);
-          }
-        }
-      });
-    }
-
-    if (missingFields.length > 0) {
-      toast.error(
-        `Please fill in the following required fields: ${missingFields.join(", ")}`
+    if (!silent) {
+      // Only enforce validation gates on manual save
+      const isInitialNew = ["new", "new lead"].includes(
+        (initialStatus || "").toLowerCase()
       );
-      return;
+      if (isCaller && isInitialNew && !hasStatusChanged && !newBookingAdded) {
+        toast.error("Please update the lead status before saving.");
+        return;
+      }
+
+      const missingFields = [];
+      if (combinedFields && Array.isArray(combinedFields)) {
+        combinedFields.forEach((field) => {
+          if (field.isRequired) {
+            const value = currentData.leadData[field.fieldName];
+            if (!value || String(value).trim() === "") {
+              missingFields.push(field.displayLabel || field.fieldName);
+            }
+          }
+        });
+      }
+      if (missingFields.length > 0) {
+        toast.error(
+          `Please fill in the following required fields: ${missingFields.join(", ")}`
+        );
+        return;
+      }
     }
 
     setSaving(true);
     try {
       const details = await updateLeadDetails(id, {
-        fieldDataUpdates: leadData,
-        notes,
-        status,
+        fieldDataUpdates: currentData.leadData,
+        notes: currentData.notes,
+        status: currentData.status,
       });
 
-      await updateLeadStatus(id, { status, notes });
+      await updateLeadStatus(id, { status: currentData.status, notes: currentData.notes });
 
       setLead((prev) => ({
         ...prev,
-        status: details?.status || status,
-        notes: details?.notes || notes,
+        status: details?.status || currentData.status,
+        notes: details?.notes || currentData.notes,
         fieldData: details?.fieldData || prev?.fieldData || [],
         followUpAt: details?.followUpAt || prev?.followUpAt || null,
       }));
 
-      await loadActivities();
-      toast.success("Lead saved successfully");
+      if (!silent) await loadActivities();
+      if (!silent) toast.success("Lead saved successfully");
     } catch (err) {
       const msg =
         err?.response?.data?.error ||
@@ -91,11 +98,11 @@ export default function useLeadActions({
         err?.message ||
         "Failed to save lead";
       console.error("Save lead error:", err);
-      toast.error(msg);
+      if (!silent) toast.error(msg);
     } finally {
       setSaving(false);
     }
-  };
+  }, [id]);
 
   const handleRequestMobileCall = async () => {
     if (!id) return;

@@ -22,24 +22,32 @@ export const toYMD = (d) =>
 export const tomorrowYMD = () =>
   toYMD(new Date(Date.now() + 24 * 60 * 60 * 1000));
 
-export const fmtTime = (d) =>
-  d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+const _toDate = (v) => {
+  const d = typeof v === "string" ? new Date(v) : v;
+  return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+};
+
+const _pad = (n) => String(n).padStart(2, '0');
+
+const _fmtDateParts = (d) =>
+  `${_pad(d.getDate())}/${_pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+
+const _fmtTimeParts = (d) =>
+  `${_pad(d.getHours())}:${_pad(d.getMinutes())}`;
+
+export const fmtTime = (d) => {
+  const dt = _toDate(d);
+  return dt ? _fmtTimeParts(dt) : "";
+};
 
 export const fmtDate = (v) => {
-  if (!v) return "";
-  const d = typeof v === "string" ? new Date(v) : v;
-  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString();
+  const d = _toDate(v);
+  return d ? _fmtDateParts(d) : "";
 };
 
 export const fmtDateTime = (v) => {
-  if (!v) return "\u2014";
-  const d = typeof v === "string" ? new Date(v) : v;
-  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "\u2014";
-  return `${d.toLocaleDateString()} \u2022 ${d.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
+  const d = _toDate(v);
+  return d ? `${_fmtDateParts(d)} \u2022 ${_fmtTimeParts(d)}` : "\u2014";
 };
 
 export const timeToHHMM = (dateLike) => {
@@ -117,6 +125,11 @@ export const actionMeta = (action = "") => {
       Icon: FiSettings,
       tone: "bg-orange-50 text-orange-700 border-orange-200",
       label: "TelCRM System Note",
+    },
+    whatsapp_sent: {
+      Icon: FiMessageSquare,
+      tone: "bg-green-50 text-green-700 border-green-200",
+      label: "WhatsApp Sent",
     },
     telcrm_whatsapp: {
       Icon: FiMessageSquare,

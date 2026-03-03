@@ -506,7 +506,7 @@ export default function SearchLeadsPage() {
                                     {renderField(selectedLead, "procedure") || "—"}
                                 </Descriptions.Item>
                                 <Descriptions.Item label={<Space size={4}><FiCalendar className="text-gray-400" /> Call Later Date</Space>}>
-                                    {selectedLead.followUpAt ? new Date(selectedLead.followUpAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                                    {selectedLead.followUpAt ? (() => { const d = new Date(selectedLead.followUpAt); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; })() : "—"}
                                 </Descriptions.Item>
                                 <Descriptions.Item label={<Space size={4}><FiMapPin className="text-gray-400" /> Location</Space>}>
                                     {renderField(selectedLead, "location") || "—"}
@@ -542,7 +542,7 @@ export default function SearchLeadsPage() {
                                                         <div className="mt-1">
                                                             <Text type="secondary" className="text-xs">
                                                                 <FiClock size={10} className="inline mr-1" />
-                                                                {date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} at {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                {`${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}/${date.getFullYear()} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`}
                                                                 {" • "}
                                                                 {act.actor?.name || "System"}
                                                             </Text>

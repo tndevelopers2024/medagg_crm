@@ -1,4 +1,7 @@
 const WaTemplate = require("../models/WaTemplate");
+const LeadActivity = require("../models/LeadActivity");
+const Lead = require("../models/Lead");
+const { safeLogLeadActivity } = require("../services/activityLogger");
 
 // @desc    Get all templates visible to current user (own + global)
 // @route   GET /api/v1/wa-templates
@@ -82,6 +85,72 @@ exports.updateWaTemplate = async (req, res) => {
     res.json({ success: true, data: template });
   } catch (error) {
     res.status(400).json({ success: false, error: error.message });
+  }
+};
+
+// @desc    Bulk create templates from uploaded JSON/CSV data
+// @route   POST /api/v1/wa-templates/bulk
+// @access  Private
+exports.bulkCreateWaTemplates = async (req, res) => {
+  try {
+    const { templates } = req.body;
+    if (!Array.isArray(templates) || templates.length === 0) {
+      return res.status(400).json({ success: false, error: "templates array is required" });
+    }
+
+    const canGlobal = ["admin", "superadmin", "owner"].includes(req.user.roleName);
+    const docs = templates
+      .filter((t) => t.name && t.body)
+      .map((t) => ({
+        name: String(t.name).slice(0, 100),
+        body: String(t.body).slice(0, 2000),
+        isGlobal: canGlobal && !!t.isGlobal,
+        userId: req.user._id,
+      }));
+
+    if (docs.length === 0) {
+      return res.status(400).json({ success: false, error: "No valid templates found (name and body are required)" });
+    }
+
+    const inserted = await WaTemplate.insertMany(docs, { ordered: false });
+    res.status(201).json({ success: true, count: inserted.length, data: inserted });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+};
+
+// @desc    Log a WhatsApp message sent from the modal as a lead activity
+// @route   POST /api/v1/wa-templates/log-send
+// @access  Private
+exports.logWhatsAppSend = async (req, res) => {
+  try {
+    const { leadId, message, templateName } = req.body;
+    if (!leadId || !message) {
+      return res.status(400).json({ success: false, error: "leadId and message are required" });
+    }
+
+    const lead = await Lead.findById(leadId).select("_id").lean();
+    if (!lead) {
+      return res.status(404).json({ success: false, error: "Lead not found" });
+    }
+
+    const preview = message.length > 80 ? message.slice(0, 80) + "…" : message;
+    await safeLogLeadActivity({
+      leadId,
+      actorId: req.user._id,
+      action: "whatsapp_sent",
+      description: `WhatsApp sent: ${preview}`,
+      diff: {},
+      meta: {
+        fullMessage: message,
+        messageType: "Outgoing",
+        templateName: templateName || null,
+      },
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 

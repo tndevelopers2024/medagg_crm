@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
     Table,
     Button,
@@ -23,6 +23,7 @@ import {
     DragOutlined,
     SlidersOutlined,
     SearchOutlined,
+    UploadOutlined,
 } from "@ant-design/icons";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -59,6 +60,7 @@ const FieldModal = ({ field, open, onClose, onSave }) => {
     const [optionInput, setOptionInput] = useState("");
     const [options, setOptions] = useState([]);
     const [loading, setLoading] = useState(false);
+    const optionUploadRef = useRef(null);
 
     useEffect(() => {
         if (open) {
@@ -93,6 +95,29 @@ const FieldModal = ({ field, open, onClose, onSave }) => {
 
     const handleRemoveOption = (index) => {
         setOptions(options.filter((_, i) => i !== index));
+    };
+
+    const handleUploadOptions = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        e.target.value = '';
+        try {
+            const text = await file.text();
+            // Support CSV (comma-separated on one line or multiple lines) and plain text (one per line)
+            const raw = text
+                .split(/[\n,]/)
+                .map(v => v.replace(/^"|"$/g, '').trim())
+                .filter(Boolean);
+            const newVals = raw.filter(v => !options.includes(v));
+            if (newVals.length === 0) {
+                toast("All values already exist in the list");
+                return;
+            }
+            setOptions(prev => [...prev, ...newVals]);
+            toast.success(`Added ${newVals.length} option${newVals.length !== 1 ? 's' : ''}`);
+        } catch {
+            toast.error("Failed to read file");
+        }
     };
 
     const handleOk = async () => {
@@ -188,7 +213,25 @@ const FieldModal = ({ field, open, onClose, onSave }) => {
 
                 {fieldType === "dropdown" && (
                     <div className="mb-4">
-                        <Text strong className="text-xs mb-1 block">Dropdown Options *</Text>
+                        <div className="flex items-center justify-between mb-1">
+                            <Text strong className="text-xs">Dropdown Options *</Text>
+                            <Tooltip title="Upload values from a .txt or .csv file (one value per line or comma-separated)">
+                                <Button
+                                    size="small"
+                                    icon={<UploadOutlined />}
+                                    onClick={() => optionUploadRef.current?.click()}
+                                >
+                                    Upload
+                                </Button>
+                            </Tooltip>
+                            <input
+                                ref={optionUploadRef}
+                                type="file"
+                                accept=".txt,.csv"
+                                className="hidden"
+                                onChange={handleUploadOptions}
+                            />
+                        </div>
                         <Space.Compact style={{ width: '100%' }}>
                             <Input
                                 value={optionInput}

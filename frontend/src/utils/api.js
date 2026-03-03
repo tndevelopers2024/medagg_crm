@@ -953,6 +953,16 @@ export const deleteWaTemplate = async (id) => {
   return data; // { success, message }
 };
 
+export const bulkCreateWaTemplates = async (templates) => {
+  const { data } = await api.post("/wa-templates/bulk", { templates });
+  return data; // { success, count, data: [...] }
+};
+
+export const logWhatsAppSend = async ({ leadId, message, templateName }) => {
+  const { data } = await api.post("/wa-templates/log-send", { leadId, message, templateName });
+  return data;
+};
+
 /* -------------------------------------------
  * ALARMS
  * ----------------------------------------- */

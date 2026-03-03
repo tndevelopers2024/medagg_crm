@@ -175,7 +175,7 @@ const LeadDetailPanel = ({ lead, onClose }) => {
                             <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex-1">
                                 <p className="text-sm font-medium text-gray-900">Lead Created</p>
                                 <p className="text-xs text-gray-500 mt-1">
-                                    {lead.createdTime ? new Date(lead.createdTime).toLocaleString() : "Unknown date"}
+                                    {lead.createdTime ? (() => { const d = new Date(lead.createdTime); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; })() : "Unknown date"}
                                 </p>
                             </div>
                         </div>
@@ -364,7 +364,7 @@ export default function AdminReportsPage() {
                                                 </Pill>
                                             </td>
                                             <td className="px-6 py-4 text-gray-500">
-                                                {lead.createdTime ? new Date(lead.createdTime).toLocaleDateString() : '—'}
+                                                {lead.createdTime ? (() => { const d = new Date(lead.createdTime); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; })() : '—'}
                                             </td>
                                             <td className="px-6 py-4 text-right">
                                                 <button className="text-violet-600 hover:text-violet-800 font-medium text-xs">View</button>

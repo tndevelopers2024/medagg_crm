@@ -210,8 +210,15 @@ export default function LeadsManagement() {
     customFrom: filters.customFrom,
     customTo: filters.customTo,
     followupFilter: filters.followupFilter,
+    followupFrom: filters.followupFrom,
+    followupTo: filters.followupTo,
     customFieldFilters: filters.customFieldFilters,
     filterOperators: filters.filterOperators,
+    filterIncludeTexts: filters.filterIncludeTexts,
+    opdDate: filters.opdDate,
+    opdDateTo: filters.opdDateTo,
+    ipdDate: filters.ipdDate,
+    ipdDateTo: filters.ipdDateTo,
     fieldConfigs,
     notify,
   });
@@ -434,6 +441,12 @@ export default function LeadsManagement() {
           analyticsFilterOptions={analytics.analyticsFilterOptions}
           operators={filters.filterOperators}
           onOperatorChange={filters.setFilterOperator}
+          filterIncludeTexts={filters.filterIncludeTexts}
+          onIncludeTextChange={filters.setFilterIncludeText}
+          opdDate={filters.opdDate} setOpdDate={filters.setOpdDate}
+          opdDateTo={filters.opdDateTo} setOpdDateTo={filters.setOpdDateTo}
+          ipdDate={filters.ipdDate} setIpdDate={filters.setIpdDate}
+          ipdDateTo={filters.ipdDateTo} setIpdDateTo={filters.setIpdDateTo}
         />
       </section>
 

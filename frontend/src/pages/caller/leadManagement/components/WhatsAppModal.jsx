@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { FiMessageCircle, FiPlus, FiEdit3, FiTrash2, FiSave, FiChevronLeft, FiGlobe, FiUser, FiSearch } from "react-icons/fi";
+import { FiMessageCircle, FiPlus, FiEdit3, FiTrash2, FiSave, FiChevronLeft, FiGlobe, FiUser, FiSearch, FiUpload } from "react-icons/fi";
 import toast from "react-hot-toast";
-import { Modal, Input, Button, List, Tag, Checkbox, Empty } from "antd";
+import { Modal, Input, Button, List, Tag, Checkbox, Empty, Tooltip } from "antd";
 import {
   fetchWaTemplates,
   createWaTemplate,
   updateWaTemplate,
   deleteWaTemplate,
+  bulkCreateWaTemplates,
+  logWhatsAppSend,
 } from "../../../../utils/api";
 import { useAuth } from "../../../../contexts/AuthContext";
 
@@ -43,11 +45,16 @@ export default function WhatsAppModal({
   const userRoleName = user?.role && typeof user.role === "object" ? (user.role.name || "").toLowerCase() : String(user?.role || "").toLowerCase();
   const isAdmin = ["admin", "superadmin", "owner"].includes(userRoleName);
   const textareaRef = useRef(null);
+  const uploadRef = useRef(null);
 
   const [message, setMessage] = useState("");
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [uploading, setUploading] = useState(false);
+  // Track which template was applied (for logging)
+  const [activeTemplateName, setActiveTemplateName] = useState("");
+  const [showAllFields, setShowAllFields] = useState(false);
 
   // Template form state
   const [view, setView] = useState(VIEW_MAIN);
@@ -73,6 +80,7 @@ export default function WhatsAppModal({
     if (open) {
       loadTemplates();
       setView(VIEW_MAIN);
+      setShowAllFields(false);
     }
   }, [open, loadTemplates]);
 
@@ -120,7 +128,7 @@ export default function WhatsAppModal({
     }
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!message.trim()) {
       toast.error("Please enter a message.");
       return;
@@ -141,12 +149,72 @@ export default function WhatsAppModal({
 
     const waUrl = `https://wa.me/${num}?text=${encodeURIComponent(finalMessage)}`;
     window.open(waUrl, "_blank");
+
+    // Log activity (fire-and-forget — don't block the send)
+    const leadId = leadData._id || leadData.id;
+    if (leadId) {
+      logWhatsAppSend({ leadId, message: finalMessage, templateName: activeTemplateName || undefined })
+        .catch((err) => console.warn("Failed to log WhatsApp activity:", err));
+    }
+
     setMessage("");
+    setActiveTemplateName("");
     onClose();
   };
 
   const applyTemplate = (tpl) => {
     setMessage(tpl.body);
+    setActiveTemplateName(tpl.name);
+  };
+
+  // ---- Template file upload (JSON or CSV) ----
+  const parseUploadedFile = (text, filename) => {
+    const ext = filename.split('.').pop().toLowerCase();
+    if (ext === 'json') {
+      try {
+        const parsed = JSON.parse(text);
+        return Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        throw new Error("Invalid JSON file");
+      }
+    }
+    // CSV: name,body[,isGlobal]
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) throw new Error("CSV must have a header row and at least one data row");
+    const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+    return lines.slice(1).map(line => {
+      const fields = [];
+      let cur = '', inQ = false;
+      for (const ch of line) {
+        if (ch === '"') { inQ = !inQ; continue; }
+        if (ch === ',' && !inQ) { fields.push(cur); cur = ''; continue; }
+        cur += ch;
+      }
+      fields.push(cur);
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = (fields[i] || '').trim(); });
+      return obj;
+    });
+  };
+
+  const handleUploadFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setUploading(true);
+    try {
+      const text = await file.text();
+      const parsed = parseUploadedFile(text, file.name);
+      const valid = parsed.filter(t => t.name && t.body);
+      if (valid.length === 0) throw new Error("No valid templates found (name and body required)");
+      const res = await bulkCreateWaTemplates(valid);
+      toast.success(`Uploaded ${res.count} template${res.count !== 1 ? 's' : ''}`);
+      await loadTemplates();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
   };
 
   // ---- Template CRUD ----
@@ -368,15 +436,36 @@ export default function WhatsAppModal({
           <label className="text-xs font-medium text-gray-700">
             Templates
           </label>
-          <Button
-            type="link"
-            size="small"
-            icon={<FiPlus className="w-3.5 h-3.5" />}
-            onClick={openCreateForm}
-            style={{ color: "#15803d" }}
-          >
-            New Template
-          </Button>
+          <div className="flex items-center gap-1">
+            <Tooltip title="Upload templates from JSON or CSV file">
+              <Button
+                type="text"
+                size="small"
+                icon={<FiUpload className="w-3.5 h-3.5" />}
+                loading={uploading}
+                onClick={() => uploadRef.current?.click()}
+                style={{ color: "#6b7280" }}
+              >
+                Upload
+              </Button>
+            </Tooltip>
+            <input
+              ref={uploadRef}
+              type="file"
+              accept=".json,.csv"
+              className="hidden"
+              onChange={handleUploadFile}
+            />
+            <Button
+              type="link"
+              size="small"
+              icon={<FiPlus className="w-3.5 h-3.5" />}
+              onClick={openCreateForm}
+              style={{ color: "#15803d" }}
+            >
+              New Template
+            </Button>
+          </div>
         </div>
 
         <Input
@@ -507,21 +596,22 @@ export default function WhatsAppModal({
       <div className="space-y-1 mb-4">
         <label className="text-xs text-gray-600">Insert Field</label>
         <div className="flex flex-wrap gap-1.5">
-          {availableFields.slice(0, 12).map((f) => (
+          {(showAllFields ? availableFields : availableFields.slice(0, 12)).map((f) => (
             <Tag
               key={f.key}
               className="cursor-pointer hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700"
-              onClick={() =>
-                insertField(f.key, setMessage, message)
-              }
+              onClick={() => insertField(f.key, setMessage, message)}
             >
               {f.label}
             </Tag>
           ))}
           {availableFields.length > 12 && (
-            <span className="text-xs text-gray-400 self-center">
-              +{availableFields.length - 12} more
-            </span>
+            <Tag
+              className="cursor-pointer border-dashed border-gray-300 text-violet-600 hover:bg-violet-50 hover:border-violet-300"
+              onClick={() => setShowAllFields(p => !p)}
+            >
+              {showAllFields ? "Show less" : `+${availableFields.length - 12} more`}
+            </Tag>
           )}
         </div>
       </div>

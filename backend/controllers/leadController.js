@@ -26,12 +26,19 @@ const buildLeadFilter = async (query) => {
     dateMode, from, to, followup, followupFrom, followupTo, q,
     callStatus, callCountFrom, callCountTo,
     opdStatus, ipdStatus, diagnostics,
+    opdDate, opdDateTo, ipdDate, ipdDateTo, opdDateOp, ipdDateOp,
     statusOp, sourceOp, assignedToOp, campaignOp,
     followupOp, opdStatusOp, ipdStatusOp, diagnosticsOp,
   } = query;
 
   // Status (case-insensitive, supports comma-separated multi-values)
-  if (status) {
+  if (statusOp === 'is_empty') {
+    filter.$and = filter.$and || [];
+    filter.$and.push({ $or: [{ status: null }, { status: '' }, { status: { $exists: false } }] });
+  } else if (statusOp === 'is_include' && status) {
+    filter.$and = filter.$and || [];
+    filter.$and.push({ status: { $regex: status, $options: 'i' } });
+  } else if (status) {
     let statusValues = status.includes(',') ? status.split(',').filter(Boolean) : [status];
 
     // Map stageName values (e.g. "new") to displayLabel (e.g. "New Lead")
@@ -57,7 +64,10 @@ const buildLeadFilter = async (query) => {
   }
 
   // Assigned caller (supports comma-separated multi-values)
-  if (assignedTo) {
+  if (assignedToOp === 'is_empty') {
+    filter.$and = filter.$and || [];
+    filter.$and.push({ $or: [{ assignedTo: null }, { assignedTo: { $exists: false } }] });
+  } else if (assignedTo) {
     const callerValues = assignedTo.includes(',') ? assignedTo.split(',').filter(Boolean) : [assignedTo];
     const hasUnassigned = callerValues.some(v => v === 'null' || v === 'Unassigned');
     const realIds = callerValues.filter(v => v !== 'null' && v !== 'Unassigned');
@@ -87,28 +97,48 @@ const buildLeadFilter = async (query) => {
   }
 
   // Source — check both top-level source and fieldData
-  if (source) {
+  if (source || sourceOp === 'is_empty') {
     filter.$and = filter.$and || [];
-    const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (sourceOp === 'is_not') {
+    if (sourceOp === 'is_empty') {
       filter.$and.push({
         $and: [
-          { source: { $not: new RegExp(`^${escaped}$`, 'i') } },
-          { $nor: [{ fieldData: { $elemMatch: { name: { $regex: /^source$/i }, values: { $regex: new RegExp(`^${escaped}$`, 'i') } } } }] },
+          { $or: [{ source: null }, { source: '' }, { source: { $exists: false } }] },
+          { $nor: [{ fieldData: { $elemMatch: { name: { $regex: /^source$/i }, values: { $exists: true, $ne: [] } } } }] },
         ],
       });
     } else {
-      filter.$and.push({
-        $or: [
-          { source: { $regex: new RegExp(`^${escaped}$`, 'i') } },
-          { fieldData: { $elemMatch: { name: { $regex: /^source$/i }, values: { $regex: new RegExp(`^${escaped}$`, 'i') } } } },
-        ],
-      });
+      const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (sourceOp === 'is_not') {
+        filter.$and.push({
+          $and: [
+            { source: { $not: new RegExp(`^${escaped}$`, 'i') } },
+            { $nor: [{ fieldData: { $elemMatch: { name: { $regex: /^source$/i }, values: { $regex: new RegExp(`^${escaped}$`, 'i') } } } }] },
+          ],
+        });
+      } else if (sourceOp === 'is_include') {
+        // Substring match (no anchors)
+        filter.$and.push({
+          $or: [
+            { source: { $regex: escaped, $options: 'i' } },
+            { fieldData: { $elemMatch: { name: { $regex: /^source$/i }, values: { $regex: escaped, $options: 'i' } } } },
+          ],
+        });
+      } else {
+        filter.$and.push({
+          $or: [
+            { source: { $regex: new RegExp(`^${escaped}$`, 'i') } },
+            { fieldData: { $elemMatch: { name: { $regex: /^source$/i }, values: { $regex: new RegExp(`^${escaped}$`, 'i') } } } },
+          ],
+        });
+      }
     }
   }
 
   // Campaign — frontend sends mongo _id(s); leads may store external campaignId
-  if (campaignId) {
+  if (campaignOp === 'is_empty') {
+    filter.$and = filter.$and || [];
+    filter.$and.push({ $or: [{ campaignId: null }, { campaignId: '' }, { campaignId: { $exists: false } }] });
+  } else if (campaignId) {
     const Campaign = require("../models/Campaign");
     const ids = campaignId.includes(',') ? campaignId.split(',').filter(Boolean) : [campaignId];
     const allPossibleIds = [];
@@ -171,11 +201,38 @@ const buildLeadFilter = async (query) => {
         $gte: dayBoundsIST(new Date(`${from}T00:00:00+05:30`)).start,
         $lte: dayBoundsIST(new Date(`${to}T00:00:00+05:30`)).end,
       };
+    } else if (dateMode === 'After' && from) {
+      // Strictly after the end of the given day (IST)
+      filter.createdTime = { $gt: dayBoundsIST(new Date(`${from}T00:00:00+05:30`)).end };
+    } else if (dateMode === 'Before' && to) {
+      // Strictly before the start of the given day (IST)
+      filter.createdTime = { $lt: dayBoundsIST(new Date(`${to}T00:00:00+05:30`)).start };
     }
   }
 
   // Follow-up filter
-  if (followup && followup !== 'All') {
+  if (followupOp === 'is_empty') {
+    filter.$and = filter.$and || [];
+    filter.$and.push({ $or: [{ followUpAt: null }, { followUpAt: { $exists: false } }] });
+  } else if (followupOp === 'after' && followupFrom) {
+    const dayBoundsIST = (d) => {
+      const dt = new Date(d);
+      const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+      istDate.setUTCHours(0, 0, 0, 0);
+      const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+      return { start, end: new Date(start.getTime() + 86399999) };
+    };
+    filter.followUpAt = { $gt: dayBoundsIST(new Date(`${followupFrom}T00:00:00+05:30`)).end };
+  } else if (followupOp === 'before' && followupTo) {
+    const dayBoundsIST = (d) => {
+      const dt = new Date(d);
+      const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+      istDate.setUTCHours(0, 0, 0, 0);
+      const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+      return { start, end: new Date(start.getTime() + 86399999) };
+    };
+    filter.followUpAt = { $lt: dayBoundsIST(new Date(`${followupTo}T00:00:00+05:30`)).start };
+  } else if (followup && followup !== 'All') {
     const now = new Date();
     // IST-aware day bounds (UTC+5:30) — works correctly regardless of server timezone
     const dayBoundsIST = (d) => {
@@ -286,12 +343,18 @@ const buildLeadFilter = async (query) => {
   }
 
   // OPD Status filter
-  if (opdStatus && opdStatus !== 'OPD Status') {
+  if (opdStatusOp === 'is_empty') {
+    filter.$and = filter.$and || [];
+    filter.$and.push({ $or: [{ opBookings: null }, { opBookings: { $exists: false } }, { opBookings: { $size: 0 } }] });
+  } else if (opdStatus && opdStatus !== 'OPD Status') {
     const opdEscaped = opdStatus.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (opdStatusOp === 'is_not') {
       filter.opBookings = {
         $not: { $elemMatch: { status: { $regex: new RegExp(`^${opdEscaped}$`, 'i') } } }
       };
+    } else if (opdStatusOp === 'is_include') {
+      filter.$and = filter.$and || [];
+      filter.$and.push({ opBookings: { $elemMatch: { status: { $regex: opdEscaped, $options: 'i' } } } });
     } else {
       filter.opBookings = {
         $elemMatch: { status: { $regex: new RegExp(`^${opdEscaped}$`, 'i') } }
@@ -300,12 +363,18 @@ const buildLeadFilter = async (query) => {
   }
 
   // IPD Status filter
-  if (ipdStatus && ipdStatus !== 'IPD Status') {
+  if (ipdStatusOp === 'is_empty') {
+    filter.$and = filter.$and || [];
+    filter.$and.push({ $or: [{ ipBookings: null }, { ipBookings: { $exists: false } }, { ipBookings: { $size: 0 } }] });
+  } else if (ipdStatus && ipdStatus !== 'IPD Status') {
     const ipdEscaped = ipdStatus.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (ipdStatusOp === 'is_not') {
       filter.ipBookings = {
         $not: { $elemMatch: { status: { $regex: new RegExp(`^${ipdEscaped}$`, 'i') } } }
       };
+    } else if (ipdStatusOp === 'is_include') {
+      filter.$and = filter.$and || [];
+      filter.$and.push({ ipBookings: { $elemMatch: { status: { $regex: ipdEscaped, $options: 'i' } } } });
     } else {
       filter.ipBookings = {
         $elemMatch: { status: { $regex: new RegExp(`^${ipdEscaped}$`, 'i') } }
@@ -313,22 +382,76 @@ const buildLeadFilter = async (query) => {
     }
   }
 
-  // Diagnostics filter
-  if (diagnostics && diagnostics !== 'Diagnostics') {
+  // OPD Date filter — filter by booking date (IST day bounds)
+  if (opdDate) {
     filter.$and = filter.$and || [];
-    const diagEscaped = diagnostics.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const diagElemMatch = {
-      name: { $regex: /^diagnostic[s]?$|^diagnostic[_ ]?(non|status)$/i },
-      values: { $regex: new RegExp(`^${diagEscaped}$`, 'i') }
+    const _opdDayBounds = (d) => {
+      const dt = new Date(d);
+      const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+      istDate.setUTCHours(0, 0, 0, 0);
+      const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+      return { start, end: new Date(start.getTime() + 86399999) };
     };
-    if (diagnosticsOp === 'is_not') {
+    const { start: opdStart, end: opdEnd } = _opdDayBounds(new Date(`${opdDate}T00:00:00+05:30`));
+    if (opdDateOp === 'after') {
+      filter.$and.push({ opBookings: { $elemMatch: { date: { $gt: opdEnd } } } });
+    } else if (opdDateOp === 'before') {
+      filter.$and.push({ opBookings: { $elemMatch: { date: { $lt: opdStart } } } });
+    } else if (opdDateOp === 'custom' && opdDateTo) {
+      const { end: opdToEnd } = _opdDayBounds(new Date(`${opdDateTo}T00:00:00+05:30`));
+      filter.$and.push({ opBookings: { $elemMatch: { date: { $gte: opdStart, $lte: opdToEnd } } } });
+    } else {
+      filter.$and.push({ opBookings: { $elemMatch: { date: { $gte: opdStart, $lte: opdEnd } } } });
+    }
+  }
+
+  // IPD Date filter — filter by booking date (IST day bounds)
+  if (ipdDate) {
+    filter.$and = filter.$and || [];
+    const _ipdDayBounds = (d) => {
+      const dt = new Date(d);
+      const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+      istDate.setUTCHours(0, 0, 0, 0);
+      const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+      return { start, end: new Date(start.getTime() + 86399999) };
+    };
+    const { start: ipdStart, end: ipdEnd } = _ipdDayBounds(new Date(`${ipdDate}T00:00:00+05:30`));
+    if (ipdDateOp === 'after') {
+      filter.$and.push({ ipBookings: { $elemMatch: { date: { $gt: ipdEnd } } } });
+    } else if (ipdDateOp === 'before') {
+      filter.$and.push({ ipBookings: { $elemMatch: { date: { $lt: ipdStart } } } });
+    } else if (ipdDateOp === 'custom' && ipdDateTo) {
+      const { end: ipdToEnd } = _ipdDayBounds(new Date(`${ipdDateTo}T00:00:00+05:30`));
+      filter.$and.push({ ipBookings: { $elemMatch: { date: { $gte: ipdStart, $lte: ipdToEnd } } } });
+    } else {
+      filter.$and.push({ ipBookings: { $elemMatch: { date: { $gte: ipdStart, $lte: ipdEnd } } } });
+    }
+  }
+
+  // Diagnostics filter
+  if (diagnosticsOp === 'is_empty' || (diagnostics && diagnostics !== 'Diagnostics')) {
+    filter.$and = filter.$and || [];
+    if (diagnosticsOp === 'is_empty') {
       filter.$and.push({
-        $nor: [{ fieldData: { $elemMatch: diagElemMatch } }],
+        $nor: [{ fieldData: { $elemMatch: { name: { $regex: /^diagnostic[s]?$|^diagnostic[_ ]?(non|status)$/i }, values: { $exists: true, $ne: [] } } } }],
       });
     } else {
-      filter.$and.push({
-        fieldData: { $elemMatch: diagElemMatch }
-      });
+      const diagEscaped = diagnostics.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (diagnosticsOp === 'is_include') {
+        filter.$and.push({
+          fieldData: { $elemMatch: { name: { $regex: /^diagnostic[s]?$|^diagnostic[_ ]?(non|status)$/i }, values: { $elemMatch: { $regex: diagEscaped, $options: 'i' } } } }
+        });
+      } else {
+        const diagElemMatch = {
+          name: { $regex: /^diagnostic[s]?$|^diagnostic[_ ]?(non|status)$/i },
+          values: { $regex: new RegExp(`^${diagEscaped}$`, 'i') }
+        };
+        if (diagnosticsOp === 'is_not') {
+          filter.$and.push({ $nor: [{ fieldData: { $elemMatch: diagElemMatch } }] });
+        } else {
+          filter.$and.push({ fieldData: { $elemMatch: diagElemMatch } });
+        }
+      }
     }
   }
 
@@ -340,25 +463,36 @@ const buildLeadFilter = async (query) => {
       const opKey = `fieldOp__${fieldName}`;
       const operator = query[opKey] || 'is';
 
-      if (value) {
+      if (value || operator === 'is_empty') {
         filter.$and = filter.$and || [];
-        const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const nameVariants = [
           fieldName,
           fieldName.replace(/_/g, ' '),
           fieldName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
         ];
-        const elemMatch = {
-          name: { $in: nameVariants },
-          values: { $regex: new RegExp(`^${escaped}$`, 'i') },
-        };
 
-        if (operator === 'is_not') {
+        if (operator === 'is_empty') {
           filter.$and.push({
-            $nor: [{ fieldData: { $elemMatch: elemMatch } }],
+            $nor: [{ fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $exists: true, $ne: [] } } } }],
           });
         } else {
-          filter.$and.push({ fieldData: { $elemMatch: elemMatch } });
+          const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          if (operator === 'is_include') {
+            // Substring match — no anchors
+            filter.$and.push({
+              fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $elemMatch: { $regex: escaped, $options: 'i' } } } }
+            });
+          } else {
+            const elemMatch = {
+              name: { $in: nameVariants },
+              values: { $regex: new RegExp(`^${escaped}$`, 'i') },
+            };
+            if (operator === 'is_not') {
+              filter.$and.push({ $nor: [{ fieldData: { $elemMatch: elemMatch } }] });
+            } else {
+              filter.$and.push({ fieldData: { $elemMatch: elemMatch } });
+            }
+          }
         }
       }
     }
@@ -996,7 +1130,7 @@ const getAllLeads = async (req, res) => {
 
     const [leads, total] = await Promise.all([
       Lead.find(filter, projection)
-        .sort({ createdTime: -1 })
+        .sort({ createdTime: -1, _id: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .populate("assignedTo", "name email"),
@@ -2761,9 +2895,9 @@ const getAdminDashboardV2 = async (req, res) => {
 
     const nowMs = Date.now();
     const bdActivityTracker = bdActivityRaw.map((r) => {
-      const dropouts = r.outcomes.filter(
-        (o) => ["no_answer", "busy", "switched_off", "wrong_number"].includes(o)
-      ).length;
+      const DROPOUT_OUTCOMES = ["no_answer", "busy", "switched_off", "wrong_number"];
+      const dropouts = r.outcomes.filter((o) => DROPOUT_OUTCOMES.includes(o)).length;
+      const connectedCalls = r.outcomes.filter((o) => !DROPOUT_OUTCOMES.includes(o)).length;
       const booked = r.outcomes.filter((o) => o === "converted").length;
       const lastCallMs = r.lastCall ? new Date(r.lastCall).getTime() : null;
       const idleMin = lastCallMs ? Math.round((nowMs - lastCallMs) / 60000) : null;
@@ -2779,6 +2913,7 @@ const getAdminDashboardV2 = async (req, res) => {
         callerId: r._id,
         callerName: r.user?.name || "Unknown",
         callsMade: r.callsMade,
+        connectedCalls,
         uniqueDials: r.uniqueDials.length,
         callDuration,
         lastCall: r.lastCall,

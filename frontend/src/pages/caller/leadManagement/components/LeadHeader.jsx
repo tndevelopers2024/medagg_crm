@@ -1,7 +1,7 @@
 import React from "react";
 import {
   FiArrowLeft,
-  FiSave,
+  FiCheckCircle,
   FiPhoneCall,
   FiRefreshCcw,
   FiShare2,
@@ -17,6 +17,7 @@ import PermissionGate from "../../../../components/PermissionGate";
 export default function LeadHeader({
   leadName,
   status,
+  isLost,
   rating,
   onRatingChange,
   onBack,
@@ -72,27 +73,32 @@ export default function LeadHeader({
                 >
                   {status}
                 </span>
+                {isLost && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border text-rose-600 bg-rose-50 border-rose-100">
+                    LOSTED
+                  </span>
+                )}
               </div>
-          
+
             </div>
-                <div className="-ml-1">
-                <Rate
-                  value={currentRating}
-                  onChange={(val) => onRatingChange(String(val))}
-                  allowClear
-                  character={({ index, value }) => {
-                    const filled = index < value;
-                    return (
-                      <FiStar
-                        fill={filled ? "#fadb14" : "transparent"}
-                        stroke={filled ? "#fadb14" : "#d1d5db"} // Gold if filled, Gray-300 if empty
-                        strokeWidth={filled ? 0 : 2}
-                        style={{ fontSize: 16 }}
-                      />
-                    );
-                  }}
-                />
-              </div>
+            <div className="-ml-1">
+              <Rate
+                value={currentRating}
+                onChange={(val) => onRatingChange(String(val))}
+                allowClear
+                character={({ index, value }) => {
+                  const filled = index < value;
+                  return (
+                    <FiStar
+                      fill={filled ? "#fadb14" : "transparent"}
+                      stroke={filled ? "#fadb14" : "#d1d5db"} // Gold if filled, Gray-300 if empty
+                      strokeWidth={filled ? 0 : 2}
+                      style={{ fontSize: 16 }}
+                    />
+                  );
+                }}
+              />
+            </div>
           </div>
 
           <Space wrap>
@@ -174,20 +180,19 @@ export default function LeadHeader({
                 </Button>
               </Tooltip>
             </PermissionGate>
-            <Tooltip title="Save">
-              <Button
-                icon={<FiSave />}
-                onClick={onSave}
-                loading={saving}
-                style={{
-                  background: "linear-gradient(to right, #ff2e6e, #ff5aa4)",
-                  borderColor: "transparent",
-                  color: "#fff",
-                }}
-              >
-                {saving ? "Saving..." : "Save"}
-              </Button>
-            </Tooltip>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-100 text-sm">
+              {saving ? (
+                <>
+                  <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-gray-500 font-medium">Saving...</span>
+                </>
+              ) : (
+                <>
+                  <FiCheckCircle className="text-green-500" />
+                  <span className="text-gray-500 font-medium">Saved</span>
+                </>
+              )}
+            </div>
             <Tooltip title="Refresh Activity">
               <Button
                 icon={

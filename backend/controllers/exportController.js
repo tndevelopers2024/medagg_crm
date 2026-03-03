@@ -361,7 +361,14 @@ exports.exportLeads = async (req, res) => {
                         case "date":
                         case "created_at":
                             const dateVal = lead.createdTime || lead.createdAt;
-                            row["Created Date"] = dateVal ? new Date(dateVal).toLocaleDateString("en-IN") : "";
+                            if (dateVal) {
+                              const _d = new Date(dateVal);
+                              const _dd = String(_d.getDate()).padStart(2,'0');
+                              const _mm = String(_d.getMonth()+1).padStart(2,'0');
+                              row["Created Date"] = `${_dd}/${_mm}/${_d.getFullYear()}`;
+                            } else {
+                              row["Created Date"] = "";
+                            }
                             break;
 
                         case "campaign":

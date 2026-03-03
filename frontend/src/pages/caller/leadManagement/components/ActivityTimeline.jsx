@@ -31,20 +31,26 @@ function MetaSection({ a }) {
   const action = a.action;
 
   // ── WhatsApp: render as a message bubble ──────────────────────────────
-  if (action === "telcrm_whatsapp") {
+  if (action === "telcrm_whatsapp" || action === "whatsapp_sent") {
     const fullMsg = m.FullMessage || m.fullMessage || m.message || "";
-    const dir = (m.MessageType || m.messageType || "").toLowerCase();
+    const dir = (m.MessageType || m.messageType || "outgoing").toLowerCase();
+    const tplName = m.templateName || m.TemplateName || "";
     if (!fullMsg) return null;
     return (
-      <p
-        className={`mt-2 text-xs leading-relaxed rounded-lg px-3 py-2 border ${
-          dir === "outgoing"
-            ? "bg-emerald-50 border-emerald-100 text-gray-700"
-            : "bg-blue-50 border-blue-100 text-gray-700"
-        }`}
-      >
-        {fullMsg}
-      </p>
+      <div className="mt-2 space-y-1">
+        {tplName && (
+          <span className="text-[10px] text-green-600 font-medium">Template: {tplName}</span>
+        )}
+        <p
+          className={`text-xs leading-relaxed rounded-lg px-3 py-2 border ${
+            dir === "outgoing"
+              ? "bg-emerald-50 border-emerald-100 text-gray-700"
+              : "bg-blue-50 border-blue-100 text-gray-700"
+          }`}
+        >
+          {fullMsg}
+        </p>
+      </div>
     );
   }
 
@@ -115,7 +121,7 @@ export default function ActivityTimeline({ activities, actsLoading, onRefresh })
     ? activities.map((a) => {
         const aid = String(a.id || a._id);
         const at = a.createdAt ? new Date(a.createdAt) : null;
-        const dateStr = at ? at.toLocaleDateString("en-GB") : "";
+        const dateStr = at ? `${String(at.getDate()).padStart(2,'0')}/${String(at.getMonth()+1).padStart(2,'0')}/${at.getFullYear()}` : "";
         const timeStr = at ? fmtTime(at) : "";
         const meta = actionMeta(a.action);
 

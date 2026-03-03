@@ -8,6 +8,7 @@ import { downloadFlatCSV } from "./csvExport";
 const CSV_COLUMNS = [
   { key: "callerName", label: "BD Name" },
   { key: "callsMade", label: "Calls Made" },
+  { key: "connectedCalls", label: "Connected Calls" },
   { key: "uniqueDials", label: "Unique Dials" },
   { key: "callDuration", label: "Call Duration" },
   { key: "lastCall", label: "Last Call", getValue: (r) => r.lastCall ? new Date(r.lastCall).toLocaleTimeString() : "—" },
@@ -31,6 +32,12 @@ const TABLE_COLUMNS = [
     ),
   },
   { key: "callsMade", title: "Calls Made", dataIndex: "callsMade" },
+  {
+    key: "connectedCalls",
+    title: "Connected Calls",
+    dataIndex: "connectedCalls",
+    render: (val) => <Tag color="blue">{val ?? 0}</Tag>,
+  },
   { key: "uniqueDials", title: "Unique Dials", dataIndex: "uniqueDials" },
   { key: "callDuration", title: "Call Duration", dataIndex: "callDuration" },
   {

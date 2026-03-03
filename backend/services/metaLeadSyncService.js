@@ -155,6 +155,24 @@ function detectFormIdsFromAds(ads) {
 }
 
 /**
+ * Fetch the name of a Meta Lead Form by its ID.
+ * Returns the form name string, or an empty string on failure.
+ */
+async function fetchFormName(formId, accessToken) {
+  try {
+    const data = await graphGet(
+      String(formId),
+      { accessToken, params: { fields: "id,name" } },
+      { maxAttempts: 3 }
+    );
+    return data?.name ? String(data.name) : "";
+  } catch (e) {
+    console.warn(`[meta-sync] could not fetch form name for ${formId}:`, e?.response?.data?.error?.message || e.message);
+    return "";
+  }
+}
+
+/**
  * Fetch leads from a form in pages and process them immediately (Streaming/Batching).
  * This avoids loading thousands of leads into memory at once.
  */
@@ -196,7 +214,7 @@ async function processFormLeadsBatch({ formId, accessToken, pageLimit = 100, pro
   return processedCount;
 }
 
-async function upsertMetaLead(rawLead, fallbackAttr = {}) {
+async function upsertMetaLead(rawLead, fallbackAttr = {}, formName = "") {
   const metaLeadId = rawLead?.id ? String(rawLead.id) : "";
   if (!metaLeadId) return { inserted: 0, updated: 0, skipped: 1 };
 
@@ -256,6 +274,7 @@ async function upsertMetaLead(rawLead, fallbackAttr = {}) {
     platform: "meta",
     source: "Facebook",
     formId,
+    batch: formName,
     campaignId,
     adId,
     adsetId,
@@ -334,6 +353,12 @@ async function syncMetaLeads(options = {}) {
         summary.formsSynced += 1;
         console.log(`[meta-sync] fetching leads for form ${formId}`);
 
+        // Fetch the form name from Meta to store in the `batch` field
+        const formName = await fetchFormName(formId, accessToken);
+        if (formName) {
+          console.log(`[meta-sync] form ${formId} name: "${formName}"`);
+        }
+
         // Define batch processor
         const batchProcessor = async (leadsBatch) => {
           summary.leadsFetched += leadsBatch.length;
@@ -346,7 +371,7 @@ async function syncMetaLeads(options = {}) {
             };
 
             try {
-              const r = await upsertMetaLead(rawLead, fallback);
+              const r = await upsertMetaLead(rawLead, fallback, formName);
               summary.leadsInserted += r.inserted;
               summary.leadsSkipped += r.skipped;
             } catch (e) {
