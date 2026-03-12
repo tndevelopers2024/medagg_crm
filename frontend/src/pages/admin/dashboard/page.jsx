@@ -18,6 +18,7 @@ import PermissionGate from "../../../components/PermissionGate";
 import useAdminDashboard from "./hooks/useAdminDashboard";
 import DateRangeFilter from "./components/DateRangeFilter";
 import KpiStatCards from "./components/KpiStatCards";
+import { buildLeadsUrl, dashboardPresetToDateFilter, dashboardPresetToBookingDateFilter } from "../../../utils/leadsNavigation";
 import CityDoctorTable from "./components/CityDoctorTable";
 import CampaignWiseTable from "./components/CampaignWiseTable";
 import CampWiseTable from "./components/CampWiseTable";
@@ -329,40 +330,52 @@ export default function Dashboard() {
         <PermissionGate permission="dashboard.dashboard.kpiStats">
           <KpiStatCards
             kpiCards={data.kpiCards}
+            datePreset={datePreset}
             onCardClick={(cardKey) => {
+              const dateFilter     = dashboardPresetToDateFilter(datePreset, customRange);
+              const opdDateFilter  = dashboardPresetToBookingDateFilter(datePreset, customRange, 'opd');
+              const ipdDateFilter  = dashboardPresetToBookingDateFilter(datePreset, customRange, 'ipd');
+              const diagDateFilter = dashboardPresetToBookingDateFilter(datePreset, customRange, 'diag');
               const filterMap = {
-                todaysLeads: { dateMode: 'Today' },
-                pendingNewLeads: { leadStatus: 'New Lead' },
-                opBooked: { opdStatus: 'booked' },
-                opDone: { opdStatus: 'done' },
-                ipBooked: { ipdStatus: 'booked' },
-                ipDone: { ipdStatus: 'done' },
-                surgerySuggested: { /* surgery filter */ },
-                diagnosticSuggested: { /* diagnostic filter */ },
+                todaysLeads:         { ...dateFilter },
+                pendingNewLeads:     { ...dateFilter, callerFilter: ['Unassigned'] },
+                pendingTasks:            { leadStatus: ['Hot', 'Pros', 'DNP', 'Recapture New'], followupFilter: 'Custom', followupTo: new Date().toISOString().slice(0, 10) },
+                tomorrowOpdDiagBooked:  (() => {
+                  const t = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000);
+                  const tStr = t.toISOString().slice(0, 10);
+                  return { opdDate: tStr, opdStatus: 'Booked' };
+                })(),
+                // OP/IP/Diag cards use booking date (not lead creation date)
+                opBooked:            { ...opdDateFilter, opdStatus: 'Booked' },
+                opDone:              { ...opdDateFilter, opdStatus: 'Done' },
+                ipBooked:            { ...ipdDateFilter, ipdStatus: 'Booked' },
+                ipDone:              { ...ipdDateFilter, ipdStatus: 'Done' },
+                diagnosticBooked:    { ...diagDateFilter, diagBookingStatus: 'Booked' },
+                diagnosticDone:      { ...diagDateFilter, diagBookingStatus: 'Done' },
+                surgerySuggested:    { ...dateFilter, hasSurgery: true },
+                diagnosticSuggested: { ...dateFilter, diagCaseType: true },
               };
               const filter = filterMap[cardKey];
-              if (filter) {
-                navigate('/leads', { state: { filter } });
-              }
+              if (filter) navigate(buildLeadsUrl(filter));
             }}
           />
         </PermissionGate>
         <div className="grid gap-6">
           {/* City & Doctor Summary */}
           <PermissionGate permission="dashboard.dashboard.cityTable">
-            <CityDoctorTable data={data.cityDoctorSummary} />
+            <CityDoctorTable data={data.cityDoctorSummary} datePreset={datePreset} customRange={customRange} />
           </PermissionGate>
 
           {/* Campaign-Wise Leads */}
           <PermissionGate permission="dashboard.dashboard.campaignAnalytics">
-            <CampaignWiseTable data={data.campaignWise} />
-            <CampWiseTable data={data.campWise} />
+            <CampaignWiseTable data={data.campaignWise} datePreset={datePreset} customRange={customRange} />
+            <CampWiseTable data={data.campWise} datePreset={datePreset} customRange={customRange} />
           </PermissionGate>
 
           {/* BD Activity & Performance */}
           <PermissionGate permission="dashboard.dashboard.bdPerformance">
-            <BdActivityTracker data={data.bdActivityTracker} />
-            <BdPerformanceSummary data={data.bdPerformanceSummary} />
+            <BdActivityTracker data={data.bdActivityTracker} datePreset={datePreset} customRange={customRange} />
+            <BdPerformanceSummary data={data.bdPerformanceSummary} datePreset={datePreset} customRange={customRange} />
           </PermissionGate>
         </div>
       </div>

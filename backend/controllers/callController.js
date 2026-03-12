@@ -148,15 +148,6 @@ exports.completeTask = async (req, res) => {
     lead.lastCallAt = new Date();
     lead.lastCallOutcome = outcome;
 
-    // status transition heuristics
-    if (outcome === 'connected') lead.status = 'contacted';
-    if (outcome === 'interested') lead.status = 'interested';
-    if (outcome === 'not_interested') lead.status = 'not_interested';
-    if (outcome === 'converted') lead.status = 'converted';
-    if (['no_answer', 'busy', 'switched_off', 'callback', 'voicemail'].includes(outcome)) {
-      lead.status = ['new', 'New Lead'].includes(lead.status) ? 'in_progress' : lead.status;
-    }
-
     await lead.save();
 
     await LeadActivity.create({

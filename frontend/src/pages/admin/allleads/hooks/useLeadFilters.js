@@ -17,14 +17,22 @@ const DEFAULTS = {
   diag: "Diagnostics",
   campaign: [],
   search: "",
+  batch: "",
+  statusFrom: "",
+  statusTo: "",
   opdDate: "",
   opdDateTo: "",
   ipdDate: "",
   ipdDateTo: "",
+  diagBook: "",     // diagnostic booking status: "Booked" | "Done" | ""
+  diagDate: "",
+  diagDateTo: "",
+  hasSurgery: "",   // "1" when filtering by opBookings.surgery exists
+  diagCaseType: "", // "1" when filtering by caseType=diagnostic
 };
 
 // All URL param keys owned by this hook — used to avoid overwriting analytics params
-const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'followup', 'followupFrom', 'followupTo', 'opd', 'ipd', 'diag', 'campaign', 'search', 'ops', 'cf', 'inc', 'opdDate', 'opdDateTo', 'ipdDate', 'ipdDateTo'];
+const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'followup', 'followupFrom', 'followupTo', 'opd', 'ipd', 'diag', 'campaign', 'search', 'batch', 'statusFrom', 'statusTo', 'ops', 'cf', 'inc', 'opdDate', 'opdDateTo', 'ipdDate', 'ipdDateTo', 'diagBook', 'diagDate', 'diagDateTo', 'hasSurgery', 'diagCaseType'];
 
 // Resolve legacy `view` param and special `date` values into concrete filter state
 function resolveInitialParams(searchParams) {
@@ -115,10 +123,18 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     Array.isArray(initialParams.campaign) ? initialParams.campaign : DEFAULTS.campaign
   );
   const [search, setSearch] = useState(initialParams.search || DEFAULTS.search);
+  const [batch, setBatch] = useState(initialParams.batch || DEFAULTS.batch);
+  const [statusFrom, setStatusFrom] = useState(initialParams.statusFrom || '');
+  const [statusTo, setStatusTo] = useState(initialParams.statusTo || '');
   const [opdDate, setOpdDate] = useState(initialParams.opdDate || '');
   const [opdDateTo, setOpdDateTo] = useState(initialParams.opdDateTo || '');
   const [ipdDate, setIpdDate] = useState(initialParams.ipdDate || '');
   const [ipdDateTo, setIpdDateTo] = useState(initialParams.ipdDateTo || '');
+  const [diagBookingStatus, setDiagBookingStatus] = useState(initialParams.diagBook || '');
+  const [diagDate, setDiagDate] = useState(initialParams.diagDate || '');
+  const [diagDateTo, setDiagDateTo] = useState(initialParams.diagDateTo || '');
+  const [hasSurgery, setHasSurgery] = useState(initialParams.hasSurgery || '');
+  const [diagCaseType, setDiagCaseType] = useState(initialParams.diagCaseType || '');
 
   // Filter operators — { filterKey: 'is' | 'is_not' | 'is_empty' | 'is_include' }
   const [filterOperators, setFilterOperators] = useState(initialParams.ops || {});
@@ -190,10 +206,18 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if (diagnostics !== DEFAULTS.diag) params.diag = diagnostics;
     if (campaignFilter.length > 0) params.campaign = campaignFilter.join(',');
     if (search !== DEFAULTS.search) params.search = search;
+    if (batch !== DEFAULTS.batch) params.batch = batch;
+    if (statusFrom) params.statusFrom = statusFrom;
+    if (statusTo) params.statusTo = statusTo;
     if (opdDate) params.opdDate = opdDate;
     if (opdDateTo) params.opdDateTo = opdDateTo;
     if (ipdDate) params.ipdDate = ipdDate;
     if (ipdDateTo) params.ipdDateTo = ipdDateTo;
+    if (diagBookingStatus) params.diagBook = diagBookingStatus;
+    if (diagDate) params.diagDate = diagDate;
+    if (diagDateTo) params.diagDateTo = diagDateTo;
+    if (hasSurgery) params.hasSurgery = hasSurgery;
+    if (diagCaseType) params.diagCaseType = diagCaseType;
 
     // filterOperators — only include non-default ('is') entries
     const nonDefaultOps = Object.entries(filterOperators).filter(([, v]) => v && v !== 'is');
@@ -233,6 +257,8 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     dateMode, customFrom, customTo, source, callerFilter, leadStatus,
     followupFilter, followupFrom, followupTo, opdStatus, ipdStatus, diagnostics, campaignFilter, search,
     filterOperators, customFieldFilters, filterIncludeTexts, opdDate, opdDateTo, ipdDate, ipdDateTo,
+    diagBookingStatus, diagDate, diagDateTo, hasSurgery, diagCaseType,
+    statusFrom, statusTo,
     setSearchParams, searchParams
   ]);
 
@@ -262,10 +288,18 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if ((params.ipd || "IPD Status") !== ipdStatus) setIpdStatus(params.ipd || "IPD Status");
     if ((params.diag || "Diagnostics") !== diagnostics) setDiagnostics(params.diag || "Diagnostics");
     if ((params.search || "") !== search) setSearch(params.search || "");
+    if ((params.batch || "") !== batch) setBatch(params.batch || "");
+    if ((params.statusFrom || "") !== statusFrom) setStatusFrom(params.statusFrom || "");
+    if ((params.statusTo || "") !== statusTo) setStatusTo(params.statusTo || "");
     if ((params.opdDate || "") !== opdDate) setOpdDate(params.opdDate || "");
     if ((params.opdDateTo || "") !== opdDateTo) setOpdDateTo(params.opdDateTo || "");
     if ((params.ipdDate || "") !== ipdDate) setIpdDate(params.ipdDate || "");
     if ((params.ipdDateTo || "") !== ipdDateTo) setIpdDateTo(params.ipdDateTo || "");
+    if ((params.diagBook || "") !== diagBookingStatus) setDiagBookingStatus(params.diagBook || "");
+    if ((params.diagDate || "") !== diagDate) setDiagDate(params.diagDate || "");
+    if ((params.diagDateTo || "") !== diagDateTo) setDiagDateTo(params.diagDateTo || "");
+    if ((params.hasSurgery || "") !== hasSurgery) setHasSurgery(params.hasSurgery || "");
+    if ((params.diagCaseType || "") !== diagCaseType) setDiagCaseType(params.diagCaseType || "");
 
     // filterOperators
     const newOps = params.ops || {};
@@ -295,6 +329,9 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     ipdStatus,
     diagnostics,
     campaignFilter,
+    batch,
+    statusFrom,
+    statusTo,
     debouncedSearch,
     customFieldFilters,
     filterOperators,
@@ -303,10 +340,16 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     opdDateTo,
     ipdDate,
     ipdDateTo,
+    diagBookingStatus,
+    diagDate,
+    diagDateTo,
+    hasSurgery,
+    diagCaseType,
   }), [
     dateMode, customFrom, customTo, source, callerFilter, leadStatus,
-    followupFilter, followupFrom, followupTo, opdStatus, ipdStatus, diagnostics, campaignFilter, debouncedSearch,
+    followupFilter, followupFrom, followupTo, opdStatus, ipdStatus, diagnostics, campaignFilter, batch, statusFrom, statusTo, debouncedSearch,
     customFieldFilters, filterOperators, filterIncludeTexts, opdDate, opdDateTo, ipdDate, ipdDateTo,
+    diagBookingStatus, diagDate, diagDateTo, hasSurgery, diagCaseType,
   ]);
 
   // Options derived from filterMeta and configs (not from scanning all leads)
@@ -392,6 +435,13 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     setOpdDateTo('');
     setIpdDate('');
     setIpdDateTo('');
+    setDiagBookingStatus('');
+    setDiagDate('');
+    setDiagDateTo('');
+    setHasSurgery('');
+    setDiagCaseType('');
+    setStatusFrom('');
+    setStatusTo('');
   }, []);
 
   return {
@@ -410,6 +460,9 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     ipdStatus, setIpdStatus,
     diagnostics, setDiagnostics,
     campaignFilter, setCampaignFilter,
+    batch, setBatch,
+    statusFrom, setStatusFrom,
+    statusTo, setStatusTo,
     search, setSearch,
     debouncedSearch,
     customFieldFilters, setCustomFieldFilter, removeCustomFieldFilter,
@@ -419,6 +472,11 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     opdDateTo, setOpdDateTo,
     ipdDate, setIpdDate,
     ipdDateTo, setIpdDateTo,
+    diagBookingStatus, setDiagBookingStatus,
+    diagDate, setDiagDate,
+    diagDateTo, setDiagDateTo,
+    hasSurgery, setHasSurgery,
+    diagCaseType, setDiagCaseType,
     // options
     sourceOptions,
     leadStatusOptions,

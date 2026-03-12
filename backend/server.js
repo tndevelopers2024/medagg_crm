@@ -46,6 +46,7 @@ const exportRoutes = require("./routes/export");
 const roleRoutes = require("./routes/roleRoutes");
 const teamRoutes = require("./routes/teamRoutes");
 const importRoutes = require("./routes/importRoutes");
+const batchRoutes = require("./routes/batchRoutes");
 
 // integrations
 const { syncMetaLeads, syncMetaCampaigns } = require("./services/metaLeadSyncService");
@@ -225,6 +226,7 @@ app.use("/api/v1/caller", callerRoutes);
 app.use("/api/v1/activities", activityRoutes);
 app.use("/api/v1/calls", callRoutes);
 app.use("/api/v1/campaigns", campaignRoutes);
+app.use("/api/v1/batches", batchRoutes);
 app.use("/api/v1/lead-fields", fieldConfigRoutes);
 app.use("/api/v1/booking-fields", bookingFieldRoutes);
 app.use("/api/v1/lead-stages", leadStageRoutes);

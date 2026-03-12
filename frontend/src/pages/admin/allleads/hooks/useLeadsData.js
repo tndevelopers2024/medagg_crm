@@ -32,11 +32,13 @@ export function buildQueryParams(filters, page, pageSize) {
   if (filters.callerFilter && filters.callerFilter.length > 0) {
     params.assignedTo = filters.callerFilter.join(',');
   }
-  if (ops.status !== 'is_include' && filters.leadStatus && filters.leadStatus.length > 0) {
+  if (ops.status !== 'is_include' && ops.status !== 'between' && filters.leadStatus && filters.leadStatus.length > 0) {
     params.status = filters.leadStatus.join(',');
   }
   const followupOp = ops.followup;
-  if (followupOp === 'after') {
+  if (followupOp === 'is_empty') {
+    params.followupOp = 'is_empty';
+  } else if (followupOp === 'after') {
     params.followupOp = 'after';
     if (filters.followupFrom) params.followupFrom = filters.followupFrom;
   } else if (followupOp === 'before') {
@@ -51,6 +53,9 @@ export function buildQueryParams(filters, page, pageSize) {
   }
   if (filters.campaignFilter && filters.campaignFilter.length > 0) {
     params.campaignId = filters.campaignFilter.join(',');
+  }
+  if (filters.batch) {
+    params.batch = filters.batch;
   }
   if (filters.debouncedSearch && filters.debouncedSearch.trim()) {
     params.q = filters.debouncedSearch.trim();
@@ -85,6 +90,11 @@ export function buildQueryParams(filters, page, pageSize) {
   if (ops.status === 'is_empty') { params.statusOp = 'is_empty'; }
   else if (ops.status === 'is_include' && inc.status) { params.status = inc.status; params.statusOp = 'is_include'; }
   else if (ops.status === 'is_not' && params.status) { params.statusOp = 'is_not'; }
+  else if (ops.status === 'between') {
+    params.statusOp = 'between';
+    if (filters.statusFrom) params.statusFrom = filters.statusFrom;
+    if (filters.statusTo) params.statusTo = filters.statusTo;
+  }
 
   if (ops.source === 'is_empty') { params.sourceOp = 'is_empty'; }
   else if (ops.source === 'is_include' && inc.source) { params.source = inc.source; params.sourceOp = 'is_include'; }
@@ -112,6 +122,18 @@ export function buildQueryParams(filters, page, pageSize) {
   if (ops.diag === 'is_empty') { params.diagnosticsOp = 'is_empty'; }
   else if (ops.diag === 'is_include' && inc.diag) { params.diagnostics = inc.diag; params.diagnosticsOp = 'is_include'; }
   else if (ops.diag === 'is_not' && params.diagnostics) { params.diagnosticsOp = 'is_not'; }
+
+  if (filters.diagBookingStatus) params.diagBook = filters.diagBookingStatus;
+  if (filters.diagDate) {
+    params.diagDate = filters.diagDate;
+    const diagOp = ops.diagDate;
+    if (diagOp && diagOp !== 'is') {
+      params.diagDateOp = diagOp;
+      if (diagOp === 'custom' && filters.diagDateTo) params.diagDateTo = filters.diagDateTo;
+    }
+  }
+  if (filters.hasSurgery) params.hasSurgery = filters.hasSurgery;
+  if (filters.diagCaseType) params.diagCaseType = filters.diagCaseType;
 
   // Custom field filters — sent as field__<fieldName>=<value> and fieldOp__<fieldName>=<operator>
   if (filters.customFieldFilters) {
@@ -148,6 +170,10 @@ export function buildQueryParams(filters, page, pageSize) {
         case "totalCalls":
           if (from !== undefined) params.callCountFrom = from;
           if (to !== undefined) params.callCountTo = to;
+          break;
+        case "custom_lost_reason":
+          // Lost reason is the lead status — filter by status
+          if (!params.status) params.status = value;
           break;
         default:
           // custom_<fieldName> drill filters

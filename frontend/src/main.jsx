@@ -18,6 +18,7 @@ import CallerDashboard from "./pages/caller/dashboard/page.jsx";
 import AllLeads from "./pages/admin/allleads/page.jsx";
 import SearchLeadsPage from "./pages/admin/searchLeads/page.jsx";
 import CampaignsPage from "./pages/admin/campaigns/page.jsx";
+import BatchesPage from "./pages/admin/batches/page.jsx";
 import ImportLeadsPage from "./pages/admin/campaigns/import/page.jsx";
 import BulkUploadPage from "./pages/admin/bulkUpload/page.jsx";
 import CsvImportPage from "./pages/admin/import/page.jsx";
@@ -77,6 +78,7 @@ createRoot(document.getElementById("root")).render(
 
                 {/* Campaigns */}
                 <Route path="/campaigns" element={<CampaignsPage />} />
+                <Route path="/batches" element={<BatchesPage />} />
                 <Route path="/campaigns/:id/import" element={<ImportLeadsPage />} />
                 <Route path="/campaigns/import" element={<ImportLeadsPage />} />
                 <Route path="/bulk-upload" element={<BulkUploadPage />} />

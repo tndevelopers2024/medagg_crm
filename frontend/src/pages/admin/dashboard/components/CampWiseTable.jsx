@@ -1,5 +1,7 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import ExpandableTable from "./ExpandableTable";
+import { buildDashboardCellUrl } from "../../../../utils/leadsNavigation";
 
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "—";
 
@@ -29,27 +31,38 @@ const CHART_CONFIG = {
   filters: [{ key: "name", label: "City" }],
 };
 
-export default function CampWiseTable({ data = [] }) {
-  const rows = data.map((c) => ({
-    name: c.city,
-    totalLeads: c.totalLeads,
-    opBooked: c.opBooked,
-    opDone: c.opDone,
-    ipBooked: c.ipBooked,
-    ipDone: c.ipDone,
-    diagnosticBooked: c.diagnosticBooked,
-    diagnosticDone: c.diagnosticDone,
-    children: (c.campaigns || []).map((camp) => ({
-      name: camp.campaignName || camp.campaignId,
-      totalLeads: camp.totalLeads,
-      opBooked: camp.opBooked,
-      opDone: camp.opDone,
-      ipBooked: camp.ipBooked,
-      ipDone: camp.ipDone,
-      diagnosticBooked: camp.diagnosticBooked,
-      diagnosticDone: camp.diagnosticDone,
-    })),
-  }));
+export default function CampWiseTable({ data = [], datePreset = "today", customRange = {} }) {
+  const navigate = useNavigate();
+
+  const rows = data.map((c) => {
+    const cityNavCtx = { search: c.city };
+    return {
+      name: c.city,
+      totalLeads: c.totalLeads,
+      opBooked: c.opBooked,
+      opDone: c.opDone,
+      ipBooked: c.ipBooked,
+      ipDone: c.ipDone,
+      diagnosticBooked: c.diagnosticBooked,
+      diagnosticDone: c.diagnosticDone,
+      _navCtx: cityNavCtx,
+      children: (c.campaigns || []).map((camp) => ({
+        name: camp.campaignName || camp.campaignId,
+        totalLeads: camp.totalLeads,
+        opBooked: camp.opBooked,
+        opDone: camp.opDone,
+        ipBooked: camp.ipBooked,
+        ipDone: camp.ipDone,
+        diagnosticBooked: camp.diagnosticBooked,
+        diagnosticDone: camp.diagnosticDone,
+        _navCtx: { campaignFilter: [String(camp.campaignId)], search: c.city },
+      })),
+    };
+  });
+
+  const handleCellClick = (colKey, row) => {
+    navigate(buildDashboardCellUrl(row._navCtx || {}, colKey, datePreset, customRange));
+  };
 
   return (
     <ExpandableTable
@@ -57,6 +70,7 @@ export default function CampWiseTable({ data = [] }) {
       columns={COLUMNS}
       rows={rows}
       chartConfig={CHART_CONFIG}
+      onCellClick={handleCellClick}
     />
   );
 }

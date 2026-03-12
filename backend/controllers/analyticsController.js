@@ -269,6 +269,19 @@ const buildFilterQuery = async (filters = []) => {
                 break;
             }
 
+            // Lost reason drill-down — status IS the lost reason (displayLabel)
+            case "custom_lost_reason": {
+                if (value) {
+                    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    if (operator === "is_not" || operator === "is not") {
+                        andConditions.push({ status: { $not: new RegExp(`^${escaped}$`, 'i') } });
+                    } else {
+                        andConditions.push({ status: { $regex: new RegExp(`^${escaped}$`, 'i') } });
+                    }
+                }
+                break;
+            }
+
             default:
                 // Handle custom fields — flexible name matching
                 if (type.startsWith("custom_")) {
@@ -343,7 +356,7 @@ exports.getLeadAnalytics = async (req, res) => {
                 break;
 
             case "lostReasons":
-                chartData = await getLostReasonsDistribution(query);
+                chartData = await getLostReasonsDistribution(query, parsedFilters);
                 break;
 
             case "assignee":
@@ -427,19 +440,34 @@ const getStatusDistribution = async (query) => {
 /**
  * Get lost reasons distribution
  */
-const getLostReasonsDistribution = async (query) => {
-    // Lost reason is typically in fieldData
+const getLostReasonsDistribution = async (query, parsedFilters = []) => {
+    // If a specific lost_reason drill-down filter is already applied, use query as-is
+    const hasLostReasonFilter = parsedFilters.some(f => f.type === "custom_lost_reason");
+
+    let lostQuery;
+    if (hasLostReasonFilter) {
+        lostQuery = query;
+    } else {
+        // No specific filter — scope to all lost stages
+        const lostStages = await LeadStageConfig.find({ stageCategory: "lost", isActive: { $ne: false } }).select("displayLabel");
+        const lostDisplayLabels = lostStages.map(s => s.displayLabel).filter(Boolean);
+
+        if (!lostDisplayLabels.length) return [];
+
+        // Intersect with any existing status filter from the caller
+        const existingStatuses = query.status?.$in;
+        const effectiveStatuses = existingStatuses
+            ? lostDisplayLabels.filter(s => existingStatuses.includes(s))
+            : lostDisplayLabels;
+
+        if (!effectiveStatuses.length) return [];
+
+        lostQuery = { ...query, status: { $in: effectiveStatuses } };
+    }
+
     const results = await Lead.aggregate([
-        { $match: query },
-        { $unwind: "$fieldData" },
-        { $match: { "fieldData.name": "lost_reason" } },
-        { $unwind: "$fieldData.values" },
-        {
-            $group: {
-                _id: "$fieldData.values",
-                count: { $sum: 1 },
-            },
-        },
+        { $match: lostQuery },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
     ]);
 

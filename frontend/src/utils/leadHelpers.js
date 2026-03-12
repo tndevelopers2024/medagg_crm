@@ -1,23 +1,35 @@
-/** Format a date as DD/MM/YYYY (Indian format) */
-export const formatDateIN = (date) => {
-    if (!date) return '—';
+/** Parse a date value into a valid Date object, or return null */
+const parseDate = (date) => {
+    if (!date) return null;
     const d = new Date(date);
-    if (isNaN(d.getTime())) return '—';
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    return `${dd}/${mm}/${d.getFullYear()}`;
+    return isNaN(d.getTime()) ? null : d;
 };
 
-/** Format a date+time as DD/MM/YYYY HH:mm (Indian format, 24-hour) */
+/** Extract IST date/time parts using official IANA timezone (most reliable) */
+const istParts = (date) => {
+    const d = parseDate(date);
+    if (!d) return null;
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(d);
+    const get = (type) => parts.find(p => p.type === type)?.value || '00';
+    return { dd: get('day'), mm: get('month'), yyyy: get('year'), hh: get('hour'), min: get('minute') };
+};
+
+/** Format a date as DD/MM/YYYY in IST */
+export const formatDateIN = (date) => {
+    const p = istParts(date);
+    if (!p) return '—';
+    return `${p.dd}/${p.mm}/${p.yyyy}`;
+};
+
+/** Format a date+time as DD/MM/YYYY HH:mm in IST (24-hour) */
 export const formatDateTimeIN = (date) => {
-    if (!date) return '—';
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return '—';
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    const min = String(d.getMinutes()).padStart(2, '0');
-    return `${dd}/${mm}/${d.getFullYear()} ${hh}:${min}`;
+    const p = istParts(date);
+    if (!p) return '—';
+    return `${p.dd}/${p.mm}/${p.yyyy} ${p.hh}:${p.min}`;
 };
 
 export const formatPhoneNumber = (phone) => {

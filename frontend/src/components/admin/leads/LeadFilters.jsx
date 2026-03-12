@@ -20,6 +20,8 @@ const STANDARD_CONFIG = {
     ipd: { id: 'ipd', label: 'IPD Status', defaultValue: 'IPD Status' },
     ipdDate: { id: 'ipdDate', label: 'IPD Date', defaultValue: '' },
     diag: { id: 'diag', label: 'Diagnostics', defaultValue: 'Diagnostics' },
+    diagStatus: { id: 'diagStatus', label: 'Diagnostics Status', defaultValue: 'Diagnostics Status' },
+    diagDate: { id: 'diagDate', label: 'Diagnostics Date', defaultValue: '' },
 };
 
 // ON / AFTER / BEFORE / CUSTOM for booking dates
@@ -43,6 +45,14 @@ const OPERATOR_OPTIONS = [
     { label: "IS NOT", value: "is_not" },
     { label: "IS EMPTY", value: "is_empty" },
     { label: "INCLUDES", value: "is_include" },
+];
+
+const STATUS_OPERATOR_OPTIONS = [
+    { label: "IS", value: "is" },
+    { label: "IS NOT", value: "is_not" },
+    { label: "IS EMPTY", value: "is_empty" },
+    { label: "INCLUDES", value: "is_include" },
+    { label: "CHANGED TO", value: "between" },
 ];
 
 // Caller and campaign are ID-based — text search not applicable
@@ -125,6 +135,8 @@ const LeadFilters = ({
     diag, setDiag, diagOptions,
     campaign, setCampaign, campaignOptions,
     search, setSearch,
+    statusFrom, setStatusFrom,
+    statusTo, setStatusTo,
     fieldConfigs = [],
     customFieldFilters = {},
     onCustomFieldFilter,
@@ -142,6 +154,9 @@ const LeadFilters = ({
     opdDateTo, setOpdDateTo,
     ipdDate, setIpdDate,
     ipdDateTo, setIpdDateTo,
+    diagStatus, setDiagStatus, diagStatusOptions,
+    diagDate, setDiagDate,
+    diagDateTo, setDiagDateTo,
 }) => {
     const allFilters = useMemo(() => {
         const standard = Object.values(STANDARD_CONFIG);
@@ -171,6 +186,9 @@ const LeadFilters = ({
         if (Array.isArray(campaign) && campaign.length > 0) newVisible.add('campaign');
         if (opdDate) newVisible.add('opdDate');
         if (ipdDate) newVisible.add('ipdDate');
+        if (diagStatus && diagStatus !== STANDARD_CONFIG.diagStatus.defaultValue) newVisible.add('diagStatus');
+        if (diagDate) newVisible.add('diagDate');
+        if (dateMode && dateMode !== STANDARD_CONFIG.date.defaultValue) newVisible.add('date');
         if (customFieldFilters) {
             for (const fieldName of Object.keys(customFieldFilters)) {
                 const config = allFilters.find(f => f.fieldName === fieldName);
@@ -178,17 +196,17 @@ const LeadFilters = ({
             }
         }
         // Keep filters visible when IS EMPTY / AFTER / BEFORE / IS INCLUDE operator is active (no value to detect from)
-        const standardKeyToId = { status: 'status', source: 'source', caller: 'caller', campaign: 'campaign', followup: 'followup', opd: 'opd', opdDate: 'opdDate', ipd: 'ipd', ipdDate: 'ipdDate', diag: 'diag', date: 'date' };
+        const standardKeyToId = { status: 'status', source: 'source', caller: 'caller', campaign: 'campaign', followup: 'followup', opd: 'opd', opdDate: 'opdDate', ipd: 'ipd', ipdDate: 'ipdDate', diag: 'diag', diagStatus: 'diagStatus', diagDate: 'diagDate', date: 'date' };
         if (operators) {
             for (const [key, op] of Object.entries(operators)) {
-                if (op === 'is_empty' || op === 'after' || op === 'before' || op === 'is_include') {
+                if (op === 'is_empty' || op === 'after' || op === 'before' || op === 'is_include' || op === 'between') {
                     const filterId = standardKeyToId[key];
                     if (filterId) newVisible.add(filterId);
                 }
             }
         }
         if (newVisible.size > visibleFilters.size) setVisibleFilters(newVisible);
-    }, [status, source, caller, followup, opd, opdDate, ipd, ipdDate, diag, campaign, customFieldFilters, operators, filterIncludeTexts]);
+    }, [status, source, caller, followup, opd, opdDate, ipd, ipdDate, diag, diagStatus, diagDate, campaign, customFieldFilters, operators, filterIncludeTexts, dateMode]);
 
     const addFilter = (filterKey) => {
         setVisibleFilters(prev => new Set([...prev, filterKey]));
@@ -205,6 +223,8 @@ const LeadFilters = ({
                 break;
             case 'status':
                 setStatus([]);
+                setStatusFrom?.('');
+                setStatusTo?.('');
                 onOperatorChange?.('status', 'is');
                 onIncludeTextChange?.('status', '');
                 break;
@@ -247,6 +267,16 @@ const LeadFilters = ({
                 setDiag(STANDARD_CONFIG.diag.defaultValue);
                 onOperatorChange?.('diag', 'is');
                 onIncludeTextChange?.('diag', '');
+                break;
+            case 'diagStatus':
+                setDiagStatus?.(STANDARD_CONFIG.diagStatus.defaultValue);
+                onOperatorChange?.('diagStatus', 'is');
+                onIncludeTextChange?.('diagStatus', '');
+                break;
+            case 'diagDate':
+                setDiagDate?.('');
+                setDiagDateTo?.('');
+                onOperatorChange?.('diagDate', 'is');
                 break;
             case 'campaign':
                 setCampaign([]);
@@ -336,9 +366,15 @@ const LeadFilters = ({
         }
     };
 
+    const [conditionSearch, setConditionSearch] = useState('');
+
     const availableFilters = allFilters.filter(f => !visibleFilters.has(f.id));
 
-    const addConditionItems = availableFilters.map((f) => ({
+    const filteredAvailableFilters = conditionSearch
+        ? availableFilters.filter(f => f.label.toLowerCase().includes(conditionSearch.toLowerCase()))
+        : availableFilters;
+
+    const addConditionItems = filteredAvailableFilters.map((f) => ({
         key: f.id,
         label: (
             <div className="flex items-center gap-2">
@@ -346,7 +382,7 @@ const LeadFilters = ({
                 {f.isCustom && <Tag className="text-[10px]" style={{ marginRight: 0 }}>Custom</Tag>}
             </div>
         ),
-        onClick: () => addFilter(f.id),
+        onClick: () => { addFilter(f.id); setConditionSearch(''); },
     }));
 
     return (
@@ -433,12 +469,50 @@ const LeadFilters = ({
                     }
                     if (filterId === 'status') {
                         const statusOp = operators['status'] || 'is';
+                        const stageOpts = statusOptions.map(s => ({ label: s.replace(/_/g, ' '), value: s }));
                         return (
                             <ConditionPill key="status" label="Lead Status" operator={statusOp}
-                                onOperatorChange={(op) => { onOperatorChange?.('status', op); if (op !== 'is_include') onIncludeTextChange?.('status', ''); }}
+                                operatorOptions={STATUS_OPERATOR_OPTIONS}
+                                onOperatorChange={(op) => {
+                                    onOperatorChange?.('status', op);
+                                    if (op !== 'is_include') onIncludeTextChange?.('status', '');
+                                    if (op !== 'between') { setStatusFrom?.(''); setStatusTo?.(''); }
+                                }}
                                 onRemove={() => removeFilter('status')}>
                                 {statusOp === 'is_include' ? (
                                     <Input size="small" variant="borderless" placeholder="Type to search..." value={filterIncludeTexts['status'] || ''} onChange={e => onIncludeTextChange?.('status', e.target.value)} style={{ width: 150 }} />
+                                ) : statusOp === 'between' ? (
+                                    <Space size={4}>
+                                        <Select
+                                            size="small"
+                                            variant="borderless"
+                                            value={statusFrom || undefined}
+                                            onChange={setStatusFrom}
+                                            options={stageOpts}
+                                            placeholder="From stage..."
+                                            popupMatchSelectWidth={false}
+                                            style={{ minWidth: 120 }}
+                                            showSearch
+                                            filterOption={(input, option) =>
+                                                (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+                                            }
+                                        />
+                                        <span className="text-xs font-semibold text-violet-400">→</span>
+                                        <Select
+                                            size="small"
+                                            variant="borderless"
+                                            value={statusTo || undefined}
+                                            onChange={setStatusTo}
+                                            options={stageOpts}
+                                            placeholder="To stage..."
+                                            popupMatchSelectWidth={false}
+                                            style={{ minWidth: 120 }}
+                                            showSearch
+                                            filterOption={(input, option) =>
+                                                (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+                                            }
+                                        />
+                                    </Space>
                                 ) : (
                                     <Select
                                         mode="multiple"
@@ -446,7 +520,7 @@ const LeadFilters = ({
                                         variant="borderless"
                                         value={status}
                                         onChange={(val) => setStatus(val)}
-                                        options={statusOptions.map(s => ({ label: s.replace(/_/g, ' '), value: s }))}
+                                        options={stageOpts}
                                         placeholder="Select statuses..."
                                         popupMatchSelectWidth={false}
                                         style={{ minWidth: 160 }}
@@ -671,6 +745,57 @@ const LeadFilters = ({
                             </ConditionPill>
                         );
                     }
+                    if (filterId === 'diagStatus') {
+                        const diagStatusOp = operators['diagStatus'] || 'is';
+                        return (
+                            <ConditionPill key="diagStatus" label="Diagnostics Status" operator={diagStatusOp}
+                                onOperatorChange={(op) => { onOperatorChange?.('diagStatus', op); if (op !== 'is_include') onIncludeTextChange?.('diagStatus', ''); }}
+                                onRemove={() => removeFilter('diagStatus')}>
+                                {diagStatusOp === 'is_include' ? (
+                                    <Input size="small" variant="borderless" placeholder="Type to search..." value={filterIncludeTexts['diagStatus'] || ''} onChange={e => onIncludeTextChange?.('diagStatus', e.target.value)} style={{ width: 140 }} />
+                                ) : (
+                                    <ValueSelect value={diagStatus || STANDARD_CONFIG.diagStatus.defaultValue} onChange={setDiagStatus} options={diagStatusOptions || ['Diagnostics Status', 'Booked', 'Done', 'Cancelled']} />
+                                )}
+                            </ConditionPill>
+                        );
+                    }
+                    if (filterId === 'diagDate') {
+                        const diagDateOp = operators['diagDate'] || 'is';
+                        return (
+                            <ConditionPill key="diagDate" label="Diagnostics Date" operator={diagDateOp}
+                                operatorOptions={BOOKING_DATE_OPERATOR_OPTIONS}
+                                onOperatorChange={(op) => {
+                                    onOperatorChange?.('diagDate', op);
+                                    if (op !== 'custom') setDiagDateTo?.('');
+                                }}
+                                onRemove={() => removeFilter('diagDate')}>
+                                {diagDateOp === 'custom' ? (
+                                    <DatePicker.RangePicker
+                                        size="small"
+                                        variant="borderless"
+                                        format="DD/MM/YYYY"
+                                        value={[
+                                            diagDate ? dayjs(diagDate) : null,
+                                            diagDateTo ? dayjs(diagDateTo) : null,
+                                        ]}
+                                        onChange={(dates) => {
+                                            setDiagDate?.(dates?.[0]?.format('YYYY-MM-DD') || '');
+                                            setDiagDateTo?.(dates?.[1]?.format('YYYY-MM-DD') || '');
+                                        }}
+                                    />
+                                ) : (
+                                    <DatePicker
+                                        size="small"
+                                        variant="borderless"
+                                        format="DD/MM/YYYY"
+                                        placeholder="Select date"
+                                        value={diagDate ? dayjs(diagDate) : null}
+                                        onChange={(date) => setDiagDate?.(date?.format('YYYY-MM-DD') || '')}
+                                    />
+                                )}
+                            </ConditionPill>
+                        );
+                    }
                     if (filterId === 'campaign') {
                         if (!campaignOptions) return null;
                         return (
@@ -794,6 +919,28 @@ const LeadFilters = ({
                 <Dropdown
                     menu={{ items: addConditionItems }}
                     trigger={["click"]}
+                    onOpenChange={(open) => { if (!open) setConditionSearch(''); }}
+                    dropdownRender={(menu) => (
+                        <div className="bg-white rounded-lg shadow-lg border border-gray-100 overflow-hidden" style={{ minWidth: 220 }}>
+                            <div className="p-2 border-b border-gray-100">
+                                <Input
+                                    size="small"
+                                    placeholder="Search filters..."
+                                    prefix={<SearchOutlined className="text-gray-400" />}
+                                    value={conditionSearch}
+                                    onChange={(e) => setConditionSearch(e.target.value)}
+                                    allowClear
+                                    autoFocus
+                                />
+                            </div>
+                            <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                                {menu}
+                            </div>
+                            {addConditionItems.length === 0 && (
+                                <div className="px-4 py-3 text-xs text-gray-400 text-center">No filters match</div>
+                            )}
+                        </div>
+                    )}
                 >
                     <Button type="text" icon={<PlusOutlined />} className="text-violet-600">
                         Add Condition

@@ -123,19 +123,23 @@ exports.bulkCreateWaTemplates = async (req, res) => {
 // @route   POST /api/v1/wa-templates/log-send
 // @access  Private
 exports.logWhatsAppSend = async (req, res) => {
+  console.log("=== API /log-send HIT ===");
   try {
     const { leadId, message, templateName } = req.body;
+    console.log("PAYLOAD:", { leadId, message, templateName, user: req.user?._id });
     if (!leadId || !message) {
+      console.log("ERROR: missing leadId or message");
       return res.status(400).json({ success: false, error: "leadId and message are required" });
     }
 
     const lead = await Lead.findById(leadId).select("_id").lean();
+    console.log("Lead Found:", lead);
     if (!lead) {
       return res.status(404).json({ success: false, error: "Lead not found" });
     }
 
     const preview = message.length > 80 ? message.slice(0, 80) + "…" : message;
-    await safeLogLeadActivity({
+    const activityLogResult = await safeLogLeadActivity({
       leadId,
       actorId: req.user._id,
       action: "whatsapp_sent",
@@ -147,9 +151,11 @@ exports.logWhatsAppSend = async (req, res) => {
         templateName: templateName || null,
       },
     });
+    console.log("Activity logged successfully!", activityLogResult);
 
     res.json({ success: true });
   } catch (error) {
+    console.error("ERROR in logWhatsAppSend:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

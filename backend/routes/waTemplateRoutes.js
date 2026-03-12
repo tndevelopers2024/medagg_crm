@@ -12,9 +12,10 @@ const {
 
 router.use(protect);
 
-router.route("/").get(checkPermission("leads.detail.whatsapp"), getWaTemplates).post(checkPermission("leads.detail.whatsapp"), createWaTemplate);
-router.post("/bulk", checkPermission("leads.detail.whatsapp"), bulkCreateWaTemplates);
-router.post("/log-send", checkPermission("leads.detail.whatsapp"), logWhatsAppSend);
-router.route("/:id").put(checkPermission("leads.detail.whatsapp"), updateWaTemplate).delete(checkPermission("leads.detail.whatsapp"), deleteWaTemplate);
+router.route("/").get(getWaTemplates).post(createWaTemplate);
+router.post("/bulk", bulkCreateWaTemplates);
+router.post("/log-send", logWhatsAppSend);
+router.route("/:id").put(updateWaTemplate).delete(deleteWaTemplate);
 
 module.exports = router;
+

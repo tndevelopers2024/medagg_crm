@@ -323,7 +323,7 @@ const updateLeadDetails = async (req, res) => {
           after[k] = values;
         } else {
           before[k] = [];
-          lead.fieldData.push({ name: k, values });
+          lead.fieldData.push({ name: key, values });
           after[k] = values;
         }
         touched.push(k);
@@ -596,16 +596,6 @@ const logCall = async (req, res) => {
       const changed = lead.status !== setStatus;
       lead.status = setStatus;
       if (changed) lead.lastStatusChangeAt = new Date();
-    } else {
-      const prev = lead.status;
-      if (outcome === "connected") lead.status = "contacted";
-      if (outcome === "interested") lead.status = "interested";
-      if (outcome === "not_interested") lead.status = "not_interested";
-      if (outcome === "converted") lead.status = "converted";
-      if (["no_answer", "busy", "switched_off", "callback", "voicemail"].includes(outcome)) {
-        lead.status = ["new", "New Lead"].includes(lead.status) ? "in_progress" : lead.status;
-      }
-      if (prev !== lead.status) lead.lastStatusChangeAt = new Date();
     }
 
     await lead.save();
@@ -829,6 +819,10 @@ const getDashboardStats = async (req, res) => {
     const now = new Date();
     const { start: todayStart, end: todayEnd } = dayBoundsIST(now);
 
+    // Allow custom date range via query params; default to today
+    const rangeStart = req.query.from ? new Date(req.query.from) : todayStart;
+    const rangeEnd   = req.query.to   ? new Date(req.query.to)   : todayEnd;
+
     // Tomorrow bounds
     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const { start: tomorrowStart, end: tomorrowEnd } = dayBoundsIST(tomorrow);
@@ -836,50 +830,52 @@ const getDashboardStats = async (req, res) => {
     // 1. Calls Made & Duration (Today)
     // We store durationSec in CallLog
     const callStats = await CallLog.aggregate([
-      { $match: { caller: callerId, createdAt: { $gte: todayStart, $lte: todayEnd } } },
+      { $match: { caller: callerId, createdAt: { $gte: rangeStart, $lte: rangeEnd } } },
       {
         $group: {
           _id: null,
           count: { $sum: 1 },
-          durationSec: { $sum: "$durationSec" }
+          durationSec: { $sum: "$durationSec" },
+          connectedCount: { $sum: { $cond: [{ $eq: ["$outcome", "connected"] }, 1, 0] } }
         }
       }
     ]);
     const callsMadeToday = callStats[0]?.count || 0;
     const callDurationMin = Math.round((callStats[0]?.durationSec || 0) / 60);
+    const connectedCallsToday = callStats[0]?.connectedCount || 0;
 
-    // 2. Buckets
-    // We need to normalize status to buckets: "new lead", "hot", "hot-ip", "prospective", "recapture", "dnp", etc.
-    // We'll fetch status counts and map them in code or usually just counts
-    const statusCounts = await Lead.aggregate([
-      { $match: { assignedTo: callerId } },
-      { $group: { _id: { $toLower: "$status" }, count: { $sum: 1 } } }
+    // 2. Status distribution — leads assigned to this caller created within the selected range
+    const statusCountsRaw = await Lead.aggregate([
+      { $match: { assignedTo: callerId, createdTime: { $gte: rangeStart, $lte: rangeEnd } } },
+      {
+        $group: {
+          _id: { $ifNull: [{ $trim: { input: "$status" } }, "New Lead"] },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { count: -1 } }
     ]);
 
-    // Helper to sum up statuses into buckets
-    const getCount = (s) => statusCounts.find(x => x._id === s)?.count || 0;
-    const buckets = {
-      "new lead": getCount("new") + getCount("new lead"),
-      "hot": getCount("hot") + getCount("hot lead"),
-      "hot-ip": getCount("hot-ip") + getCount("hot ip") + getCount("hot_inpatient"),
-      "prospective": getCount("prospective") + getCount("prospect"),
-      "recapture": getCount("recapture") + getCount("re-capture"),
-      "dnp": getCount("dnp") + getCount("do_not_proceed") + getCount("do_not_disturb") // maybe DND is DNP?
-    };
+    // Normalize empty/null status labels to "New Lead"
+    const statusCounts = statusCountsRaw.map(s => ({
+      status: (s._id && s._id.trim()) ? s._id : "New Lead",
+      count: s.count
+    }));
 
-    // 3. Tasks
-    // Count: Follow-ups for today OR New leads created today
-    const tasksTodayCount = await Lead.countDocuments({
-      assignedTo: callerId,
-      $or: [
-        { followUpAt: { $gte: todayStart, $lte: todayEnd } },
-        { createdTime: { $gte: todayStart, $lte: todayEnd } }
-      ]
-    });
-    const tasksTomorrowCount = await Lead.countDocuments({
-      assignedTo: callerId,
-      followUpAt: { $gte: tomorrowStart, $lte: tomorrowEnd }
-    });
+    // Keep buckets for backwards compatibility (used by existing frontend)
+    const buckets = {};
+
+    // 3. Tasks — always today/tomorrow regardless of the selected date range
+    const PENDING_STATUSES = [/^Hot$/i, /^Pros$/i, /^DNP$/i, /^Recapture New$/i];
+    const [tasksTodayCount, tasksTomorrowCount, pendingTasksCount] = await Promise.all([
+      Lead.countDocuments({ assignedTo: callerId, followUpAt: { $gte: todayStart, $lte: todayEnd } }),
+      Lead.countDocuments({ assignedTo: callerId, followUpAt: { $gte: tomorrowStart, $lte: tomorrowEnd } }),
+      Lead.countDocuments({
+        assignedTo: callerId,
+        status: { $in: PENDING_STATUSES },
+        followUpAt: { $exists: true, $ne: null, $lte: todayEnd },
+      }),
+    ]);
 
     // 4. OP/IP stats (Today)
     // Reuse specific aggregation logic or just count
@@ -887,7 +883,8 @@ const getDashboardStats = async (req, res) => {
     const opdBookedToday = await Lead.aggregate([
       { $match: { assignedTo: callerId } },
       { $unwind: "$opBookings" },
-      { $match: { "opBookings.date": { $gte: todayStart, $lte: todayEnd } } },
+      { $match: { "opBookings.status": "booked", "opBookings.date": { $gte: rangeStart, $lte: rangeEnd } } },
+      { $group: { _id: "$_id" } },
       { $count: "count" }
     ]);
 
@@ -898,18 +895,20 @@ const getDashboardStats = async (req, res) => {
         $match: {
           "opBookings.status": "done",
           $or: [
-            { "opBookings.doneDate": { $gte: todayStart, $lte: todayEnd } },
-            { "opBookings.doneDate": { $exists: false }, "opBookings.date": { $gte: todayStart, $lte: todayEnd } }
+            { "opBookings.doneDate": { $gte: rangeStart, $lte: rangeEnd } },
+            { "opBookings.doneDate": { $exists: false }, "opBookings.date": { $gte: rangeStart, $lte: rangeEnd } }
           ]
         }
       },
+      { $group: { _id: "$_id" } },
       { $count: "count" }
     ]);
 
     const ipdBookedToday = await Lead.aggregate([
       { $match: { assignedTo: callerId } },
       { $unwind: "$ipBookings" },
-      { $match: { "ipBookings.date": { $gte: todayStart, $lte: todayEnd } } },
+      { $match: { "ipBookings.status": "booked", "ipBookings.date": { $gte: rangeStart, $lte: rangeEnd } } },
+      { $group: { _id: "$_id" } },
       { $count: "count" }
     ]);
 
@@ -920,18 +919,20 @@ const getDashboardStats = async (req, res) => {
         $match: {
           "ipBookings.status": "done",
           $or: [
-            { "ipBookings.doneDate": { $gte: todayStart, $lte: todayEnd } },
-            { "ipBookings.doneDate": { $exists: false }, "ipBookings.date": { $gte: todayStart, $lte: todayEnd } }
+            { "ipBookings.doneDate": { $gte: rangeStart, $lte: rangeEnd } },
+            { "ipBookings.doneDate": { $exists: false }, "ipBookings.date": { $gte: rangeStart, $lte: rangeEnd } }
           ]
         }
       },
+      { $group: { _id: "$_id" } },
       { $count: "count" }
     ]);
 
     const diagnosticBookedToday = await Lead.aggregate([
       { $match: { assignedTo: callerId } },
       { $unwind: "$diagnosticBookings" },
-      { $match: { "diagnosticBookings.date": { $gte: todayStart, $lte: todayEnd } } },
+      { $match: { "diagnosticBookings.status": "booked", "diagnosticBookings.date": { $gte: rangeStart, $lte: rangeEnd } } },
+      { $group: { _id: "$_id" } },
       { $count: "count" }
     ]);
 
@@ -942,45 +943,79 @@ const getDashboardStats = async (req, res) => {
         $match: {
           "diagnosticBookings.status": "done",
           $or: [
-            { "diagnosticBookings.doneDate": { $gte: todayStart, $lte: todayEnd } },
-            { "diagnosticBookings.doneDate": { $exists: false }, "diagnosticBookings.date": { $gte: todayStart, $lte: todayEnd } }
+            { "diagnosticBookings.doneDate": { $gte: rangeStart, $lte: rangeEnd } },
+            { "diagnosticBookings.doneDate": { $exists: false }, "diagnosticBookings.date": { $gte: rangeStart, $lte: rangeEnd } }
           ]
         }
       },
+      { $group: { _id: "$_id" } },
       { $count: "count" }
+    ]);
+
+    const [tomorrowOpdBooked, tomorrowDiagBooked] = await Promise.all([
+      Lead.aggregate([
+        { $match: { assignedTo: callerId } },
+        { $unwind: "$opBookings" },
+        { $match: { "opBookings.status": "booked", "opBookings.date": { $gte: tomorrowStart, $lte: tomorrowEnd } } },
+        { $group: { _id: "$_id" } },
+        { $count: "count" }
+      ]),
+      Lead.aggregate([
+        { $match: { assignedTo: callerId } },
+        { $unwind: "$diagnosticBookings" },
+        { $match: { "diagnosticBookings.status": "booked", "diagnosticBookings.date": { $gte: tomorrowStart, $lte: tomorrowEnd } } },
+        { $group: { _id: "$_id" } },
+        { $count: "count" }
+      ]),
     ]);
 
     // 5. Today New Leads
     const todayNewLeads = await Lead.countDocuments({
       assignedTo: callerId,
-      createdTime: { $gte: todayStart, $lte: todayEnd }
+      createdTime: { $gte: rangeStart, $lte: rangeEnd }
     });
 
-    // 6. Last call time & Idle time
-    // We can query the most recent CallLog
-    const lastCallLog = await CallLog.findOne({ caller: callerId })
+    // 6. Last call / First call / Idle time — scoped to the selected range
+    const lastCallLog = await CallLog.findOne({ caller: callerId, createdAt: { $gte: rangeStart, $lte: rangeEnd } })
+      .sort({ createdAt: -1 })
+      .select("createdAt durationSec");
+
+    const firstCallLog = await CallLog.findOne({ caller: callerId, createdAt: { $gte: rangeStart, $lte: rangeEnd } })
+      .sort({ createdAt: 1 })
+      .select("createdAt");
+
+    // Idle time = time since last call ended — always based on today's last call
+    const lastCallToday = await CallLog.findOne({ caller: callerId, createdAt: { $gte: todayStart, $lte: todayEnd } })
       .sort({ createdAt: -1 })
       .select("createdAt durationSec");
 
     let lastCallAgoMin = null;
+    let firstCallAgoMin = null;
     let idleMin = 0;
 
-    if (lastCallLog) {
-      const lastCallStart = lastCallLog.createdAt.getTime();
-      const lastCallDurationMs = (lastCallLog.durationSec || 0) * 1000;
-      const lastCallEnd = lastCallStart + lastCallDurationMs;
+    if (firstCallLog) {
+      firstCallAgoMin = Math.max(0, Math.round((now.getTime() - firstCallLog.createdAt.getTime()) / 60000));
+    }
 
-      lastCallAgoMin = Math.max(0, Math.round((now.getTime() - lastCallStart) / 60000));
+    if (lastCallLog) {
+      lastCallAgoMin = Math.max(0, Math.round((now.getTime() - lastCallLog.createdAt.getTime()) / 60000));
+    }
+
+    if (lastCallToday) {
+      const lastCallEnd = lastCallToday.createdAt.getTime() + (lastCallToday.durationSec || 0) * 1000;
       idleMin = Math.max(0, Math.round((now.getTime() - lastCallEnd) / 60000));
     }
 
     res.json({
       callsMadeToday,
+      connectedCallsToday,
       callDurationMin,
       idleMin,
+      firstCallAgoMin,
       lastCallAgoMin,
       tasksTodayCount,
       tasksTomorrowCount,
+      pendingTasksCount,
       todayNewLeads,
       opdBookedToday: opdBookedToday[0]?.count || 0,
       opdDoneToday: opdDoneToday[0]?.count || 0,
@@ -988,7 +1023,8 @@ const getDashboardStats = async (req, res) => {
       ipdDoneToday: ipdDoneToday[0]?.count || 0,
       diagnosticBookedToday: diagnosticBookedToday[0]?.count || 0,
       diagnosticDoneToday: diagnosticDoneToday[0]?.count || 0,
-      buckets
+      tomorrowOpdDiagBooked: (tomorrowOpdBooked[0]?.count || 0) + (tomorrowDiagBooked[0]?.count || 0),
+      statusCounts
     });
 
   } catch (err) {

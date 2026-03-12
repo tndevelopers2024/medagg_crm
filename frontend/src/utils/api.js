@@ -320,6 +320,11 @@ export const deleteLeads = async (leadIds) => {
   return data;
 };
 
+export const updateLeadCreatedTime = async (leadId, createdTime) => {
+  const { data } = await api.patch(`/leads/${leadId}/created-time`, { createdTime });
+  return data;
+};
+
 export const assignLeadsByLocation = async (payload) => {
   const res = await api.post("/leads/assign-location", payload);
   return res.data;
@@ -550,8 +555,11 @@ export const fetchMyStats = async () => {
 /**
  * GET /caller/stats/dashboard
  */
-export const fetchDashboardStats = async () => {
-  const { data } = await api.get("/caller/stats/dashboard");
+export const fetchDashboardStats = async ({ from, to } = {}) => {
+  const params = {};
+  if (from) params.from = from;
+  if (to) params.to = to;
+  const { data } = await api.get("/caller/stats/dashboard", { params });
   return data;
 };
 
@@ -778,6 +786,20 @@ export const bulkUpdateByFilter = async (payload) => {
 /* -------------------------------------------
  * CAMPAIGNS
  * ----------------------------------------- */
+// ─── Batches (form names) ─────────────────────────────────────────────────────
+
+export const fetchBatches = async (params = {}) => {
+  const { data } = await api.get("/batches", { params });
+  return data; // { success, data, pagination }
+};
+
+export const assignBatch = async (batchName, callers) => {
+  const { data } = await api.post("/batches/assign", { batchName, callers });
+  return data; // { success, assigned }
+};
+
+// ─── Campaigns ────────────────────────────────────────────────────────────────
+
 export const fetchCampaigns = async (params = {}) => {
   const { data } = await api.get("/campaigns", { params });
   return data; // { success, count, data: [...] }

@@ -1,5 +1,7 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import ExpandableTable from "./ExpandableTable";
+import { buildDashboardCellUrl } from "../../../../utils/leadsNavigation";
 
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "—";
 
@@ -14,33 +16,45 @@ const COLUMNS = [
   { key: "diagnosticDone", label: "Diag. Done" },
 ];
 
-export default function CampaignWiseTable({ data = [] }) {
-  const rows = data.map((c) => ({
-    name: c.campaignName,
-    totalLeads: c.totalLeads,
-    opBooked: c.opBooked,
-    opDone: c.opDone,
-    ipBooked: c.ipBooked,
-    ipDone: c.ipDone,
-    diagnosticBooked: c.diagnosticBooked,
-    diagnosticDone: c.diagnosticDone,
-    children: (c.cities || []).map((city) => ({
-      name: capitalize(city.city),
-      totalLeads: city.totalLeads,
-      opBooked: city.opBooked,
-      opDone: city.opDone,
-      ipBooked: city.ipBooked,
-      ipDone: city.ipDone,
-      diagnosticBooked: city.diagnosticBooked,
-      diagnosticDone: city.diagnosticDone,
-    })),
-  }));
+export default function CampaignWiseTable({ data = [], datePreset = "today", customRange = {} }) {
+  const navigate = useNavigate();
+
+  const rows = data.map((c) => {
+    const campaignNavCtx = { campaignFilter: [String(c.campaignId)] };
+    return {
+      name: c.campaignName,
+      totalLeads: c.totalLeads,
+      opBooked: c.opBooked,
+      opDone: c.opDone,
+      ipBooked: c.ipBooked,
+      ipDone: c.ipDone,
+      diagnosticBooked: c.diagnosticBooked,
+      diagnosticDone: c.diagnosticDone,
+      _navCtx: campaignNavCtx,
+      children: (c.cities || []).map((city) => ({
+        name: capitalize(city.city),
+        totalLeads: city.totalLeads,
+        opBooked: city.opBooked,
+        opDone: city.opDone,
+        ipBooked: city.ipBooked,
+        ipDone: city.ipDone,
+        diagnosticBooked: city.diagnosticBooked,
+        diagnosticDone: city.diagnosticDone,
+        _navCtx: { campaignFilter: [String(c.campaignId)], search: city.city },
+      })),
+    };
+  });
+
+  const handleCellClick = (colKey, row) => {
+    navigate(buildDashboardCellUrl(row._navCtx || {}, colKey, datePreset, customRange));
+  };
 
   return (
     <ExpandableTable
       title="Campaign-Wise Leads"
       columns={COLUMNS}
       rows={rows}
+      onCellClick={handleCellClick}
       chartConfig={{
         metrics: [
           { key: "totalLeads", label: "Total Leads", color: "#6366f1" },

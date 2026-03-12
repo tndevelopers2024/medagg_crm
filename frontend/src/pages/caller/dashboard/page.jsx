@@ -1,5 +1,6 @@
 // src/pages/caller/dashboard/page.jsx
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import toast from "react-hot-toast";
 import {
     Card,
@@ -14,6 +15,7 @@ import {
     Space,
     Avatar,
     Select,
+    DatePicker,
     notification,
     Empty,
 } from "antd";
@@ -25,7 +27,6 @@ import {
     CalendarOutlined,
     LineChartOutlined,
     PieChartOutlined,
-    ThunderboltOutlined,
     PlusOutlined,
     InfoCircleOutlined,
 } from "@ant-design/icons";
@@ -33,7 +34,8 @@ import {
 import { getMe } from "../../../utils/api";
 import { useTodayFollowUps, useTomorrowFollowUps, useCallerDashboardStats } from "../../../hooks/queries/useCallerQueries";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { buildLeadsUrl, callerRangeToLeadsFilter, callerRangeToBookingDateFilter, callerRangeLabel } from "../../../utils/leadsNavigation";
 import { useSocket } from "../../../contexts/SocketProvider";
 import { useAuth } from "../../../contexts/AuthContext";
 import Loader from "../../../components/Loader";
@@ -132,8 +134,8 @@ const StatCard = ({ title, value, sub, icon: Icon, color = "purple", onClick }) 
     </Card>
 );
 
-const CommonMetricCard = ({ title, value, hint, footer, progress, max = 100, icon: Icon, color = "purple" }) => (
-    <Card bordered={false} className="shadow-sm rounded-2xl h-full" bodyStyle={{ padding: "20px" }}>
+const CommonMetricCard = ({ title, value, hint, footer, progress, max = 100, icon: Icon, color = "purple", onClick }) => (
+    <Card bordered={false} hoverable={!!onClick} onClick={onClick} className={`shadow-sm rounded-2xl h-full${onClick ? " cursor-pointer" : ""}`} bodyStyle={{ padding: "20px" }}>
         <div className="flex justify-between items-start mb-2">
             <Text type="secondary" size="small">{title}</Text>
             {Icon && <Icon className="text-gray-400" />}
@@ -223,6 +225,50 @@ const useEventDeduper = (windowMs = 8000) => {
 
 
 
+/* -------------------- date range helper -------------------- */
+// Values match the All Leads page date param exactly (see useLeadFilters.js)
+const DATE_RANGE_OPTIONS = [
+    { value: "Today",      label: "Today" },
+    { value: "Yesterday",  label: "Yesterday" },
+    { value: "This Week",  label: "This Week" },
+    { value: "Last Week",  label: "Last Week" },
+    { value: "This Month", label: "This Month" },
+    { value: "Last Month", label: "Last Month" },
+    { value: "Custom",     label: "Custom Range" },
+];
+
+// Compute actual ISO date bounds for the backend stats API
+const getDateRangeBounds = (range, customFrom, customTo) => {
+    const now = new Date();
+    const s = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
+    const e = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).toISOString();
+    switch (range) {
+        case "Yesterday": { const y = new Date(now - 86400000); return { from: s(y), to: e(y) }; }
+        case "This Week": {
+            const d = now.getDay(); const mon = new Date(now);
+            mon.setDate(now.getDate() - (d === 0 ? 6 : d - 1));
+            return { from: s(mon), to: e(now) };
+        }
+        case "Last Week": {
+            const d = now.getDay(); const mon = new Date(now);
+            mon.setDate(now.getDate() - (d === 0 ? 6 : d - 1) - 7);
+            const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+            return { from: s(mon), to: e(sun) };
+        }
+        case "This Month": return { from: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), to: e(now) };
+        case "Last Month": {
+            const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const last  = new Date(now.getFullYear(), now.getMonth(), 0);
+            return { from: first.toISOString(), to: e(last) };
+        }
+        case "Custom": return {
+            from: customFrom ? new Date(customFrom).toISOString() : null,
+            to:   customTo   ? new Date(new Date(customTo).getFullYear(), new Date(customTo).getMonth(), new Date(customTo).getDate(), 23, 59, 59, 999).toISOString() : null,
+        };
+        default: return { from: s(now), to: e(now) }; // Today
+    }
+};
+
 /* -------------------- page -------------------- */
 export default function CallersDashboard() {
     const { hasPermission } = useAuth();
@@ -231,6 +277,61 @@ export default function CallersDashboard() {
     usePageTitle("Caller Dashboard", "Welcome back");
 
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Date range filter — synced to URL params for back-navigation
+    const VALID_RANGES = ["Today", "Yesterday", "This Week", "Last Week", "This Month", "Last Month", "Custom"];
+    const rawRange = searchParams.get("dr");
+    const dateRange  = VALID_RANGES.includes(rawRange) ? rawRange : "Today";
+    const customFrom = searchParams.get("from") || null;
+    const customTo   = searchParams.get("to")   || null;
+
+    const setDateRange = useCallback((val) => {
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            if (val === "Today") { next.delete("dr"); } else { next.set("dr", val); }
+            if (val !== "Custom") { next.delete("from"); next.delete("to"); }
+            return next;
+        }, { replace: true });
+    }, [setSearchParams]);
+
+    const setCustomRange = useCallback((from, to) => {
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            if (from) next.set("from", from); else next.delete("from");
+            if (to)   next.set("to",   to);   else next.delete("to");
+            return next;
+        }, { replace: true });
+    }, [setSearchParams]);
+
+    const rangeBounds = useMemo(
+        () => getDateRangeBounds(dateRange, customFrom, customTo),
+        [dateRange, customFrom, customTo]
+    );
+
+    // Dynamic label prefix based on selected date range
+    const rangeLabel = callerRangeLabel(dateRange);
+
+    // Build /leads URLs with proper filter params
+    const toLeads = useCallback((extra = {}) => {
+        const dateFilter = callerRangeToLeadsFilter(dateRange, customFrom, customTo);
+        return buildLeadsUrl({ ...dateFilter, ...extra });
+    }, [dateRange, customFrom, customTo]);
+
+    const toOpdLeads = useCallback((opdStatus) => {
+        const bookingFilter = callerRangeToBookingDateFilter(dateRange, customFrom, customTo, 'opd');
+        return buildLeadsUrl({ ...bookingFilter, opdStatus });
+    }, [dateRange, customFrom, customTo]);
+
+    const toIpdLeads = useCallback((ipdStatus) => {
+        const bookingFilter = callerRangeToBookingDateFilter(dateRange, customFrom, customTo, 'ipd');
+        return buildLeadsUrl({ ...bookingFilter, ipdStatus });
+    }, [dateRange, customFrom, customTo]);
+
+    const toDiagLeads = useCallback((diagBookingStatus) => {
+        const bookingFilter = callerRangeToBookingDateFilter(dateRange, customFrom, customTo, 'diag');
+        return buildLeadsUrl({ ...bookingFilter, diagBookingStatus });
+    }, [dateRange, customFrom, customTo]);
 
     // socket + toasts
     const { socket, isConnected } = useSocket();
@@ -239,7 +340,7 @@ export default function CallersDashboard() {
     // React Query hooks for data fetching (shared cache, auto-invalidated by useSocketInvalidation)
     const { data: todayData, isLoading: todayLoading } = useTodayFollowUps();
     const { data: tomorrowData, isLoading: tomorrowLoading } = useTomorrowFollowUps();
-    const { data: stats = {}, isLoading: statsLoading } = useCallerDashboardStats();
+    const { data: stats = {}, isLoading: statsLoading } = useCallerDashboardStats(rangeBounds);
 
     const todayTasks = todayData?.leads || [];
     const tomorrowTasks = tomorrowData?.leads || [];
@@ -247,8 +348,8 @@ export default function CallersDashboard() {
 
     // refreshTasks/refreshStats are no longer needed — useSocketInvalidation handles this.
     // Keep stubs for socket handler compatibility.
-    const refreshTasks = useCallback(() => {}, []);
-    const refreshStats = useCallback(() => {}, []);
+    const refreshTasks = useCallback(() => { }, []);
+    const refreshStats = useCallback(() => { }, []);
 
     // Load user profile on mount (not cached via React Query since it's auth-specific)
     useEffect(() => {
@@ -394,19 +495,14 @@ export default function CallersDashboard() {
         const now = new Date();
 
         // 1. Stats from backend (or defaults)
-        const buckets = stats.buckets || {
-            "new lead": 0,
-            hot: 0,
-            "hot-ip": 0,
-            prospective: 0,
-            recapture: 0,
-            dnp: 0,
-        };
+        const statusCounts = stats.statusCounts || [];
 
         const todayNewLeads = stats.todayNewLeads || 0;
         const callsMadeToday = stats.callsMadeToday || 0;
+        const connectedCallsToday = stats.connectedCallsToday || 0;
         const callDurationMin = stats.callDurationMin || 0;
         const idleMin = stats.idleMin || 0;
+        const firstCallAgoMin = stats.firstCallAgoMin !== undefined ? stats.firstCallAgoMin : null;
         const lastCallAgoMin = stats.lastCallAgoMin || null;
 
         const opdBookedToday = stats.opdBookedToday || 0;
@@ -424,15 +520,17 @@ export default function CallersDashboard() {
         // Let's rely on stats for the *Count* display, and the list for the *Reminder* widgets.
         const tasksTodayCount = stats.tasksTodayCount || todayTasks.length || 0;
         const tasksTomorrowCount = stats.tasksTomorrowCount || tomorrowTasks.length || 0;
+        const pendingTasksCount = stats.pendingTasksCount || 0;
+        const tomorrowOpdDiagBooked = stats.tomorrowOpdDiagBooked || 0;
 
         // 3. Upcoming reminders (needs client-side calc on todayTasks)
         const upcomingHour = todayTasks
-            .filter((l) => withinNextMinutes(l.followUpAt, 60))
             .map((lead) => {
-                const fuDate = lead.followUpAt instanceof Date ? lead.followUpAt : (lead.followUpAt ? new Date(lead.followUpAt) : null);
+                const fuDate = parseDate(lead.followUpAt);
                 const diffMin = fuDate ? Math.max(1, Math.round((fuDate.getTime() - now.getTime()) / 60000)) : "—";
                 return { lead, fuDate, diffMin };
             })
+            .filter(({ fuDate }) => withinNextMinutes(fuDate, 60))
             .sort((a, b) => (a.fuDate?.getTime() || 0) - (b.fuDate?.getTime() || 0))
             .slice(0, 3);
 
@@ -440,6 +538,8 @@ export default function CallersDashboard() {
             todayNewLeads,
             tasksTodayCount,
             tasksTomorrowCount,
+            pendingTasksCount,
+            tomorrowOpdDiagBooked,
             opdBookedToday,
             opdDoneToday,
             ipdBookedToday,
@@ -447,39 +547,21 @@ export default function CallersDashboard() {
             diagnosticBookedToday,
             diagnosticDoneToday,
             callsMadeToday,
+            connectedCallsToday,
             callDurationMin,
             idleMin,
+            firstCallAgoMin,
             lastCallAgoMin,
             upcomingHour,
-            buckets,
+            statusCounts,
         };
     }, [todayTasks, tomorrowTasks, stats]);
 
-    // Bucket bars
+    // Dynamic bucket bars — built from real status counts returned by the API
     const bucketList = useMemo(() => {
-        const map = [
-            { label: "New Lead", key: "new lead", color: "pink" },
-            { label: "Hot", key: "hot", color: "orange" },
-            { label: "Hot-IP", key: "hot-ip", color: "green" },
-            { label: "Prospective", key: "prospective", color: "purple" },
-            { label: "Recapture", key: "recapture", color: "blue" },
-            { label: "DNP", key: "dnp", color: "gray" },
-        ];
-        return map.map((m) => ({ ...m, value: computed.buckets[m.key] || 0 }));
-    }, [computed.buckets]);
-
-    const maxBucket = useMemo(
-        () => Math.max(...bucketList.map((b) => b.value), 1),
-        [bucketList]
-    );
-    const barTone = {
-        pink: "from-[#ff2e6e] to-[#ff5aa4]",
-        orange: "from-orange-500 to-amber-400",
-        green: "from-emerald-500 to-emerald-400",
-        violet: "from-[#8c3ed8] to-[#a86cf0]",
-        sky: "from-sky-500 to-indigo-500",
-        gray: "from-gray-300 to-gray-400",
-    };
+        const list = computed.statusCounts || [];
+        return list.filter(s => s.count > 0);
+    }, [computed.statusCounts]);
 
     /* -------------------- UI -------------------- */
     if (!hasPermission("dashboard.dashboard.view")) return <AccessDenied />;
@@ -500,96 +582,140 @@ export default function CallersDashboard() {
     return (
         <main className="">
             <div className="mx-auto px-4 py-6 space-y-6">
+                {/* Date range filter */}
+                <div className="flex items-center gap-3 flex-wrap">
+                    <Select
+                        value={dateRange}
+                        onChange={setDateRange}
+                        options={DATE_RANGE_OPTIONS}
+                        style={{ width: 160 }}
+                    />
+                    {dateRange === "Custom" && (
+                        <DatePicker.RangePicker
+                            onChange={(_, [from, to]) => setCustomRange(from, to)}
+                            format="YYYY-MM-DD"
+                            allowClear={false}
+                        />
+                    )}
+                </div>
+
                 {/* Top stats */}
                 <Row gutter={[16, 16]}>
-                    <Col xs={24} sm={12} md={8} lg={8} xl={4}>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
                         <StatCard
-                            title="Today New Leads"
+                            title={`${rangeLabel} New Leads`}
                             value={computed.todayNewLeads}
-                            sub={`${computed.todayNewLeads} today`}
+                            sub={`${computed.todayNewLeads} leads`}
                             icon={UserOutlined}
                             color="purple"
-                            onClick={() => navigate("/leads?date=today&status=New Lead")}
+                            onClick={() => navigate(toLeads())}
                         />
                     </Col>
-                    <Col xs={24} sm={12} md={8} lg={8} xl={4}>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
                         <StatCard
-                            title={"Today's Task"}
+                            title="Today's Task"
                             value={computed.tasksTodayCount}
                             sub={`${computed.tasksTodayCount} due`}
                             icon={CheckCircleOutlined}
                             color="pink"
-                            onClick={() => navigate("/leads?date=tasks_today&view=tasks_today")}
+                            onClick={() => navigate("/leads?followup=Today")}
                         />
                     </Col>
-                    <Col xs={24} sm={12} md={8} lg={8} xl={4}>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
                         <StatCard
-                            title={"Tomorrow's Task"}
+                            title="Tomorrow's Task"
                             value={computed.tasksTomorrowCount}
                             sub={`${computed.tasksTomorrowCount} scheduled`}
                             icon={CalendarOutlined}
                             color="blue"
-                            onClick={() => navigate("/leads?date=tasks_tomorrow&view=tasks_tomorrow")}
+                            onClick={() => navigate("/leads?followup=Tomorrow")}
                         />
                     </Col>
-                    <Col xs={24} sm={12} md={8} lg={8} xl={4}>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
                         <StatCard
-                            title="OPD Booked Today"
+                            title="Pending Tasks"
+                            value={computed.pendingTasksCount}
+                            sub="Hot · Pros · DNP · Recapture"
+                            icon={ClockCircleOutlined}
+                            color="orange"
+                            onClick={() => navigate(buildLeadsUrl({
+                                leadStatus: ['Hot', 'Pros', 'DNP', 'Recapture New'],
+                                followupFilter: 'Custom',
+                                followupTo: new Date().toISOString().slice(0, 10),
+                            }))}
+                        />
+                    </Col>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
+                        <StatCard
+                            title="Tomorrow's Appointments"
+                            value={computed.tomorrowOpdDiagBooked}
+                            sub="OPD + Diagnostics Booked"
+                            icon={CalendarOutlined}
+                            color="cyan"
+                            onClick={() => {
+                                const t = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000);
+                                navigate(buildLeadsUrl({ opdDate: t.toISOString().slice(0, 10), opdStatus: 'Booked' }));
+                            }}
+                        />
+                    </Col>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
+                        <StatCard
+                            title={`${rangeLabel} OPD Booked`}
                             value={computed.opdBookedToday}
                             sub="Target: 2"
                             icon={ClockCircleOutlined}
                             color="green"
-                            onClick={() => navigate("/leads?date=today&status=opd%20booked")}
+                            onClick={() => navigate(toOpdLeads('Booked'))}
                         />
                     </Col>
-                    <Col xs={24} sm={12} md={8} lg={8} xl={4}>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
                         <StatCard
-                            title="OPD Done Today"
+                            title={`${rangeLabel} OPD Done`}
                             value={computed.opdDoneToday}
                             sub="Target: 3/10"
                             icon={PieChartOutlined}
                             color="orange"
-                            onClick={() => navigate("/leads?date=today&status=opd%20done")}
+                            onClick={() => navigate(toOpdLeads('Done'))}
                         />
                     </Col>
-                    <Col xs={24} sm={12} md={8} lg={8} xl={4}>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
                         <StatCard
-                            title="IPD Booked Today"
+                            title={`${rangeLabel} IPD Booked`}
                             value={computed.ipdBookedToday}
                             sub="Target: 2"
                             icon={ClockCircleOutlined}
                             color="lime"
-                            onClick={() => navigate("/leads?date=today&status=ipd%20booked")}
+                            onClick={() => navigate(toIpdLeads('Booked'))}
                         />
                     </Col>
-                    <Col xs={24} sm={12} md={8} lg={8} xl={4}>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
                         <StatCard
-                            title="IPD Done Today"
+                            title={`${rangeLabel} IPD Done`}
                             value={computed.ipdDoneToday}
                             sub="Target: 3/10"
                             icon={PieChartOutlined}
                             color="cyan"
-                            onClick={() => navigate("/leads?date=today&status=ipd%20done")}
+                            onClick={() => navigate(toIpdLeads('Done'))}
                         />
                     </Col>
-                    <Col xs={24} sm={12} md={8} lg={8} xl={4}>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
                         <StatCard
-                            title="Diag Booked Today"
+                            title={`${rangeLabel} Diag Booked`}
                             value={computed.diagnosticBookedToday}
                             sub="Target: 2"
                             icon={ClockCircleOutlined}
                             color="volcano"
-                            onClick={() => navigate("/leads?date=today&status=diagnostic%20booked")}
+                            onClick={() => navigate(toDiagLeads('Booked'))}
                         />
                     </Col>
-                    <Col xs={24} sm={12} md={8} lg={8} xl={4}>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
                         <StatCard
-                            title="Diag Done Today"
+                            title={`${rangeLabel} Diag Done`}
                             value={computed.diagnosticDoneToday}
                             sub="Target: 3/10"
                             icon={PieChartOutlined}
                             color="magenta"
-                            onClick={() => navigate("/leads?date=today&status=diagnostic%20done")}
+                            onClick={() => navigate(toDiagLeads('Done'))}
                         />
                     </Col>
                 </Row>
@@ -606,6 +732,7 @@ export default function CallersDashboard() {
                                 color={computed.tasksTodayCount >= 50 ? "green" : "orange"}
                                 max={100}
                                 icon={CheckCircleOutlined}
+                                onClick={() => navigate("/leads?followup=Today")}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -617,6 +744,19 @@ export default function CallersDashboard() {
                                 color={computed.callsMadeToday ? "blue" : "orange"}
                                 max={50}
                                 icon={PhoneOutlined}
+                                onClick={() => navigate(toLeads())}
+                            />
+                        </Col>
+                        <Col xs={24} sm={12} md={12} lg={8} xl={6}>
+                            <CommonMetricCard
+                                title="Connected Calls"
+                                value={computed.connectedCallsToday}
+                                hint={computed.connectedCallsToday ? "Connections made!" : "No connections yet"}
+                                footer={`${computed.connectedCallsToday} connected today`}
+                                color={computed.connectedCallsToday ? "green" : "orange"}
+                                max={50}
+                                icon={PhoneOutlined}
+                                onClick={() => navigate(toLeads())}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -639,6 +779,19 @@ export default function CallersDashboard() {
                                 color={computed.idleMin > 60 ? "red" : "green"}
                                 max={180}
                                 icon={ClockCircleOutlined}
+                                onClick={() => navigate(toLeads())}
+                            />
+                        </Col>
+                        <Col xs={24} sm={12} md={12} lg={8} xl={6}>
+                            <CommonMetricCard
+                                title="First Call Made"
+                                value={computed.firstCallAgoMin !== null ? formatDurationAgo(computed.firstCallAgoMin) : "—"}
+                                hint={computed.firstCallAgoMin !== null ? "Started early!" : "Start your calls"}
+                                footer={computed.firstCallAgoMin !== null ? `${formatDurationAgo(computed.firstCallAgoMin)} ago` : "No call yet"}
+                                color={computed.firstCallAgoMin !== null ? "blue" : "orange"}
+                                max={60}
+                                icon={PhoneOutlined}
+                                onClick={() => navigate(toLeads())}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -662,6 +815,7 @@ export default function CallersDashboard() {
                                 }
                                 max={60}
                                 icon={PhoneOutlined}
+                                onClick={() => navigate(toLeads())}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -673,6 +827,7 @@ export default function CallersDashboard() {
                                 color={computed.opdBookedToday ? "green" : "orange"}
                                 max={5}
                                 icon={CheckCircleOutlined}
+                                onClick={() => navigate(toOpdLeads('Booked'))}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -684,6 +839,7 @@ export default function CallersDashboard() {
                                 color={computed.opdDoneToday ? "green" : "orange"}
                                 max={5}
                                 icon={CheckCircleOutlined}
+                                onClick={() => navigate(toOpdLeads('Done'))}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -695,6 +851,7 @@ export default function CallersDashboard() {
                                 color={computed.ipdBookedToday ? "green" : "orange"}
                                 max={3}
                                 icon={CheckCircleOutlined}
+                                onClick={() => navigate(toIpdLeads('Booked'))}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -706,6 +863,7 @@ export default function CallersDashboard() {
                                 color={computed.ipdDoneToday ? "green" : "orange"}
                                 max={3}
                                 icon={CheckCircleOutlined}
+                                onClick={() => navigate(toIpdLeads('Done'))}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -717,6 +875,7 @@ export default function CallersDashboard() {
                                 color={computed.diagnosticBookedToday ? "green" : "orange"}
                                 max={3}
                                 icon={CheckCircleOutlined}
+                                onClick={() => navigate(toDiagLeads('Booked'))}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -728,17 +887,7 @@ export default function CallersDashboard() {
                                 color={computed.diagnosticDoneToday ? "green" : "orange"}
                                 max={3}
                                 icon={CheckCircleOutlined}
-                            />
-                        </Col>
-                        <Col xs={24} sm={12} md={12} lg={8} xl={6}>
-                            <CommonMetricCard
-                                title="Streak"
-                                value={computed.callsMadeToday >= 100 ? 3 : 0}
-                                hint={computed.callsMadeToday >= 100 ? "You're on a 3-Day Streak!" : "Build your streak"}
-                                footer={computed.callsMadeToday >= 100 ? "You've completed 100+ calls 3 days in a row" : "—"}
-                                color={computed.callsMadeToday >= 100 ? "blue" : "orange"}
-                                max={7}
-                                icon={ThunderboltOutlined}
+                                onClick={() => navigate(toDiagLeads('Done'))}
                             />
                         </Col>
                     </Row>
@@ -801,38 +950,58 @@ export default function CallersDashboard() {
 
                     <Col xs={24} lg={12}>
                         <Card
-                            title="Your Bucket"
+                            title="Lead Status Buckets"
                             bordered={false}
                             className="shadow-sm rounded-2xl h-full"
-                            extra={
-                                <Select defaultValue="This Month" size="small" bordered={false} style={{ width: 120 }}>
-                                    <Select.Option value="This Month">This Month</Select.Option>
-                                    <Select.Option value="Last Month">Last Month</Select.Option>
-                                    <Select.Option value="This Week">This Week</Select.Option>
-                                    <Select.Option value="Today">Today</Select.Option>
-                                </Select>
-                            }
                         >
-                            <div className="space-y-6 pt-2">
-                                {bucketList.map((b) => {
-                                    const pct = Math.max(0, Math.min(100, Math.round((b.value / maxBucket) * 100)));
-                                    return (
-                                        <div key={b.key}>
-                                            <div className="flex justify-between items-center mb-1">
-                                                <Text size="small">{b.label}</Text>
-                                                <Text strong>{b.value}</Text>
-                                            </div>
-                                            <Progress
-                                                percent={pct}
-                                                showInfo={false}
-                                                strokeColor={b.color === 'purple' ? '#7d3bd6' : undefined}
-                                                status="active"
-                                                strokeWidth={8}
-                                            />
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                            {bucketList.length === 0 ? (
+                                <Empty description="No lead data" className="py-8" />
+                            ) : (
+                                <ResponsiveContainer width="100%" height={Math.max(200, bucketList.length * 42)}>
+                                    <BarChart
+                                        data={bucketList}
+                                        layout="vertical"
+                                        margin={{ top: 4, right: 40, left: 8, bottom: 4 }}
+                                        barCategoryGap="30%"
+                                    >
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+                                        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                                        <YAxis
+                                            type="category"
+                                            dataKey="status"
+                                            width={110}
+                                            tick={{ fontSize: 12, cursor: "pointer" }}
+                                            axisLine={false}
+                                            tickLine={false}
+                                        />
+                                        <Tooltip
+                                            cursor={{ fill: "rgba(139,92,246,0.06)" }}
+                                            formatter={(value, name, props) => [value, props.payload.status]}
+                                            contentStyle={{ borderRadius: 8, fontSize: 12 }}
+                                        />
+                                        <Bar
+                                            dataKey="count"
+                                            radius={[0, 6, 6, 0]}
+                                            maxBarSize={28}
+                                            cursor="pointer"
+                                            onClick={(data) => {
+                                                if (data?.status) navigate(toLeads({ leadStatus: [data.status] }));
+                                            }}
+                                        >
+                                            {bucketList.map((entry, index) => (
+                                                <Cell
+                                                    key={entry.status}
+                                                    fill={[
+                                                        "#7c3aed", "#ec4899", "#f59e0b", "#10b981",
+                                                        "#3b82f6", "#ef4444", "#06b6d4", "#8b5cf6",
+                                                        "#84cc16", "#f97316",
+                                                    ][index % 10]}
+                                                />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            )}
                         </Card>
                     </Col>
                 </Row>

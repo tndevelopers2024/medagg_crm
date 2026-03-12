@@ -185,6 +185,12 @@ export const formatActivity = (a) => {
   if (a.action === "call_logged") return `${actor} logged a call`;
   if (a.action === "recording_uploaded")
     return `${actor} uploaded a recording`;
+  if (a.action === "whatsapp_sent") {
+    const tpl = a.meta?.templateName;
+    return tpl
+      ? `${actor} sent a WhatsApp message (template: ${tpl})`
+      : `${actor} sent a WhatsApp message`;
+  }
 
   if (a.action?.startsWith("op_booking_")) {
     const type = a.action.includes("add")

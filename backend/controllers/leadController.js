@@ -22,19 +22,34 @@ const isValidPhone = (raw) => {
 const buildLeadFilter = async (query) => {
   const filter = {};
   const {
-    status, assignedTo, source, campaignId,
+    status, statusFrom, statusTo, assignedTo, source, campaignId, batch,
     dateMode, from, to, followup, followupFrom, followupTo, q,
     callStatus, callCountFrom, callCountTo,
     opdStatus, ipdStatus, diagnostics,
     opdDate, opdDateTo, ipdDate, ipdDateTo, opdDateOp, ipdDateOp,
+    diagDate, diagDateTo, diagDateOp,
     statusOp, sourceOp, assignedToOp, campaignOp,
     followupOp, opdStatusOp, ipdStatusOp, diagnosticsOp,
   } = query;
+
+  // Batch (form name) filter
+  if (batch) filter.batch = batch;
 
   // Status (case-insensitive, supports comma-separated multi-values)
   if (statusOp === 'is_empty') {
     filter.$and = filter.$and || [];
     filter.$and.push({ $or: [{ status: null }, { status: '' }, { status: { $exists: false } }] });
+  } else if (statusOp === 'between' && (statusFrom || statusTo)) {
+    // Find leads that had a status transition from statusFrom → statusTo via LeadActivity
+    try {
+      const LeadActivity = require('../models/LeadActivity');
+      const activityQuery = { action: 'lead_update' };
+      const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (statusFrom) activityQuery['diff.before.status'] = new RegExp(`^${esc(statusFrom)}$`, 'i');
+      if (statusTo)   activityQuery['diff.after.status']  = new RegExp(`^${esc(statusTo)}$`,   'i');
+      const leadIds = await LeadActivity.distinct('lead', activityQuery);
+      filter._id = { $in: leadIds };
+    } catch (e) { /* ignore lookup errors */ }
   } else if (statusOp === 'is_include' && status) {
     filter.$and = filter.$and || [];
     filter.$and.push({ status: { $regex: status, $options: 'i' } });
@@ -382,7 +397,7 @@ const buildLeadFilter = async (query) => {
     }
   }
 
-  // OPD Date filter — filter by booking date (IST day bounds)
+  // OPD Date filter — combined with status into a single $elemMatch to prevent cross-booking matches
   if (opdDate) {
     filter.$and = filter.$and || [];
     const _opdDayBounds = (d) => {
@@ -393,19 +408,33 @@ const buildLeadFilter = async (query) => {
       return { start, end: new Date(start.getTime() + 86399999) };
     };
     const { start: opdStart, end: opdEnd } = _opdDayBounds(new Date(`${opdDate}T00:00:00+05:30`));
+    const isDoneOpd = opdStatus && /^done$/i.test(opdStatus);
+    let opdDateCond;
     if (opdDateOp === 'after') {
-      filter.$and.push({ opBookings: { $elemMatch: { date: { $gt: opdEnd } } } });
+      opdDateCond = { date: { $gt: opdEnd } };
     } else if (opdDateOp === 'before') {
-      filter.$and.push({ opBookings: { $elemMatch: { date: { $lt: opdStart } } } });
+      opdDateCond = { date: { $lt: opdStart } };
     } else if (opdDateOp === 'custom' && opdDateTo) {
       const { end: opdToEnd } = _opdDayBounds(new Date(`${opdDateTo}T00:00:00+05:30`));
-      filter.$and.push({ opBookings: { $elemMatch: { date: { $gte: opdStart, $lte: opdToEnd } } } });
+      opdDateCond = isDoneOpd
+        ? { $or: [{ doneDate: { $gte: opdStart, $lte: opdToEnd } }, { doneDate: { $exists: false }, date: { $gte: opdStart, $lte: opdToEnd } }] }
+        : { date: { $gte: opdStart, $lte: opdToEnd } };
     } else {
-      filter.$and.push({ opBookings: { $elemMatch: { date: { $gte: opdStart, $lte: opdEnd } } } });
+      opdDateCond = isDoneOpd
+        ? { $or: [{ doneDate: { $gte: opdStart, $lte: opdEnd } }, { doneDate: { $exists: false }, date: { $gte: opdStart, $lte: opdEnd } }] }
+        : { date: { $gte: opdStart, $lte: opdEnd } };
+    }
+    // If status was set via the `is` operator, merge into one $elemMatch so both apply to the same booking
+    if (filter.opBookings && filter.opBookings.$elemMatch) {
+      const statusCond = filter.opBookings.$elemMatch;
+      delete filter.opBookings;
+      filter.$and.push({ opBookings: { $elemMatch: { ...statusCond, ...opdDateCond } } });
+    } else {
+      filter.$and.push({ opBookings: { $elemMatch: opdDateCond } });
     }
   }
 
-  // IPD Date filter — filter by booking date (IST day bounds)
+  // IPD Date filter — combined with status into a single $elemMatch to prevent cross-booking matches
   if (ipdDate) {
     filter.$and = filter.$and || [];
     const _ipdDayBounds = (d) => {
@@ -416,15 +445,29 @@ const buildLeadFilter = async (query) => {
       return { start, end: new Date(start.getTime() + 86399999) };
     };
     const { start: ipdStart, end: ipdEnd } = _ipdDayBounds(new Date(`${ipdDate}T00:00:00+05:30`));
+    const isDoneIpd = ipdStatus && /^done$/i.test(ipdStatus);
+    let ipdDateCond;
     if (ipdDateOp === 'after') {
-      filter.$and.push({ ipBookings: { $elemMatch: { date: { $gt: ipdEnd } } } });
+      ipdDateCond = { date: { $gt: ipdEnd } };
     } else if (ipdDateOp === 'before') {
-      filter.$and.push({ ipBookings: { $elemMatch: { date: { $lt: ipdStart } } } });
+      ipdDateCond = { date: { $lt: ipdStart } };
     } else if (ipdDateOp === 'custom' && ipdDateTo) {
       const { end: ipdToEnd } = _ipdDayBounds(new Date(`${ipdDateTo}T00:00:00+05:30`));
-      filter.$and.push({ ipBookings: { $elemMatch: { date: { $gte: ipdStart, $lte: ipdToEnd } } } });
+      ipdDateCond = isDoneIpd
+        ? { $or: [{ doneDate: { $gte: ipdStart, $lte: ipdToEnd } }, { doneDate: { $exists: false }, date: { $gte: ipdStart, $lte: ipdToEnd } }] }
+        : { date: { $gte: ipdStart, $lte: ipdToEnd } };
     } else {
-      filter.$and.push({ ipBookings: { $elemMatch: { date: { $gte: ipdStart, $lte: ipdEnd } } } });
+      ipdDateCond = isDoneIpd
+        ? { $or: [{ doneDate: { $gte: ipdStart, $lte: ipdEnd } }, { doneDate: { $exists: false }, date: { $gte: ipdStart, $lte: ipdEnd } }] }
+        : { date: { $gte: ipdStart, $lte: ipdEnd } };
+    }
+    // If status was set via the `is` operator, merge into one $elemMatch so both apply to the same booking
+    if (filter.ipBookings && filter.ipBookings.$elemMatch) {
+      const statusCond = filter.ipBookings.$elemMatch;
+      delete filter.ipBookings;
+      filter.$and.push({ ipBookings: { $elemMatch: { ...statusCond, ...ipdDateCond } } });
+    } else {
+      filter.$and.push({ ipBookings: { $elemMatch: ipdDateCond } });
     }
   }
 
@@ -453,6 +496,71 @@ const buildLeadFilter = async (query) => {
         }
       }
     }
+  }
+
+  // Diagnostic Booking Status filter (diagBook=Booked|Done|Cancelled)
+  const { diagBook, hasSurgery, diagCaseType } = query;
+  let diagBookElemMatch = null;
+  if (diagBook) {
+    const escaped = diagBook.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    diagBookElemMatch = { status: { $regex: new RegExp(`^${escaped}$`, 'i') } };
+    // Will be merged with diagDate condition below if present, otherwise pushed now
+  }
+
+  // Diagnostic Date filter — combined with status into a single $elemMatch
+  if (diagDate) {
+    filter.$and = filter.$and || [];
+    const _diagDayBounds = (d) => {
+      const dt = new Date(d);
+      const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+      istDate.setUTCHours(0, 0, 0, 0);
+      const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+      return { start, end: new Date(start.getTime() + 86399999) };
+    };
+    const { start: diagStart, end: diagEnd } = _diagDayBounds(new Date(`${diagDate}T00:00:00+05:30`));
+    const isDoneDiag = diagBook && /^done$/i.test(diagBook);
+    let diagDateCond;
+    if (diagDateOp === 'after') {
+      diagDateCond = { date: { $gt: diagEnd } };
+    } else if (diagDateOp === 'before') {
+      diagDateCond = { date: { $lt: diagStart } };
+    } else if (diagDateOp === 'custom' && diagDateTo) {
+      const { end: diagToEnd } = _diagDayBounds(new Date(`${diagDateTo}T00:00:00+05:30`));
+      diagDateCond = isDoneDiag
+        ? { $or: [{ doneDate: { $gte: diagStart, $lte: diagToEnd } }, { doneDate: { $exists: false }, date: { $gte: diagStart, $lte: diagToEnd } }] }
+        : { date: { $gte: diagStart, $lte: diagToEnd } };
+    } else {
+      diagDateCond = isDoneDiag
+        ? { $or: [{ doneDate: { $gte: diagStart, $lte: diagEnd } }, { doneDate: { $exists: false }, date: { $gte: diagStart, $lte: diagEnd } }] }
+        : { date: { $gte: diagStart, $lte: diagEnd } };
+    }
+    const combined = diagBookElemMatch ? { ...diagBookElemMatch, ...diagDateCond } : diagDateCond;
+    filter.$and.push({ diagnosticBookings: { $elemMatch: combined } });
+    diagBookElemMatch = null; // already merged
+  }
+
+  if (diagBookElemMatch) {
+    filter.$and = filter.$and || [];
+    filter.$and.push({ diagnosticBookings: { $elemMatch: diagBookElemMatch } });
+  }
+
+  // Surgery Suggested filter (hasSurgery=1 — any opBooking with surgery field set)
+  if (hasSurgery === '1') {
+    filter.$and = filter.$and || [];
+    filter.$and.push({
+      opBookings: { $elemMatch: { surgery: { $exists: true, $ne: '' } } }
+    });
+  }
+
+  // Diagnostic Case Type filter (diagCaseType=1 — opBookings or ipBookings with caseType containing "diagnostic")
+  if (diagCaseType === '1') {
+    filter.$and = filter.$and || [];
+    filter.$and.push({
+      $or: [
+        { opBookings: { $elemMatch: { caseType: { $regex: /diagnostic/i } } } },
+        { ipBookings: { $elemMatch: { caseType: { $regex: /diagnostic/i } } } },
+      ]
+    });
   }
 
   // Generic custom field filters — field__<name>=<value>, fieldOp__<name>=is_not
@@ -2333,9 +2441,23 @@ const getAdminDashboardV2 = async (req, res) => {
     const dateFilter = { $gte: start, $lte: end };
 
     // ---- KPI Cards ----
+    // Today / tomorrow bounds in IST — fixed regardless of dashboard datePreset
+    const { end: todayEndIST, tomorrowStart, tomorrowEnd } = (() => {
+      const now2 = new Date();
+      const istDate = new Date(now2.getTime() + 5.5 * 60 * 60 * 1000);
+      istDate.setUTCHours(0, 0, 0, 0);
+      const todayS = new Date(istDate.getTime() - 5.5 * 60 * 60 * 1000);
+      const todayE = new Date(todayS.getTime() + 86399999);
+      return { end: todayE, tomorrowStart: new Date(todayS.getTime() + 86400000), tomorrowEnd: new Date(todayE.getTime() + 86400000) };
+    })();
+    const PENDING_STATUSES = [/^Hot$/i, /^Pros$/i, /^DNP$/i, /^Recapture New$/i];
+
     const [
       todaysLeads,
       pendingNewLeads,
+      pendingTasks,
+      tomorrowOpdBookedAgg,
+      tomorrowDiagBookedAgg,
       opBookedAgg,
       opDoneAgg,
       ipBookedAgg,
@@ -2347,6 +2469,25 @@ const getAdminDashboardV2 = async (req, res) => {
     ] = await Promise.all([
       Lead.countDocuments({ createdTime: dateFilter, ...leadMatch }),
       Lead.countDocuments({ createdTime: dateFilter, assignedTo: null, ...leadMatch }),
+      Lead.countDocuments({
+        status: { $in: PENDING_STATUSES },
+        followUpAt: { $exists: true, $ne: null, $lte: todayEndIST },
+        ...leadMatch,
+      }),
+      Lead.aggregate([
+        { $match: leadMatch },
+        { $unwind: "$opBookings" },
+        { $match: { "opBookings.status": "booked", "opBookings.date": { $gte: tomorrowStart, $lte: tomorrowEnd } } },
+        { $group: { _id: "$_id" } },
+        { $count: "c" },
+      ]),
+      Lead.aggregate([
+        { $match: leadMatch },
+        { $unwind: "$diagnosticBookings" },
+        { $match: { "diagnosticBookings.status": "booked", "diagnosticBookings.date": { $gte: tomorrowStart, $lte: tomorrowEnd } } },
+        { $group: { _id: "$_id" } },
+        { $count: "c" },
+      ]),
       Lead.aggregate([
         { $match: leadMatch },
         { $unwind: "$opBookings" },
@@ -2437,6 +2578,8 @@ const getAdminDashboardV2 = async (req, res) => {
     const kpiCards = {
       todaysLeads,
       pendingNewLeads,
+      pendingTasks,
+      tomorrowOpdDiagBooked: (tomorrowOpdBookedAgg[0]?.c || 0) + (tomorrowDiagBookedAgg[0]?.c || 0),
       opBooked: opBookedAgg[0]?.c || 0,
       opDone: opDoneAgg[0]?.c || 0,
       ipBooked: ipBookedAgg[0]?.c || 0,
@@ -2877,6 +3020,7 @@ const getAdminDashboardV2 = async (req, res) => {
           callsMade: { $sum: 1 },
           uniqueDials: { $addToSet: "$lead" },
           totalDuration: { $sum: "$durationSec" },
+          firstCall: { $min: "$createdAt" },
           lastCall: { $max: "$createdAt" },
           outcomes: { $push: "$outcome" },
         },
@@ -2916,6 +3060,7 @@ const getAdminDashboardV2 = async (req, res) => {
         connectedCalls,
         uniqueDials: r.uniqueDials.length,
         callDuration,
+        firstCall: r.firstCall,
         lastCall: r.lastCall,
         idleHour,
         dropouts,
@@ -3121,6 +3266,37 @@ const getLeadFilterMeta = async (req, res) => {
   }
 };
 
+const updateLeadCreatedTime = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { createdTime } = req.body;
+    if (!createdTime) return res.status(400).json({ error: "createdTime is required" });
+    const date = new Date(createdTime);
+    if (isNaN(date.getTime())) return res.status(400).json({ error: "Invalid date" });
+
+    const lead = await Lead.findById(id);
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+    const before = lead.createdTime;
+    lead.createdTime = date;
+    await lead.save();
+
+    const LeadActivity = require("../models/LeadActivity");
+    await LeadActivity.create({
+      lead: lead._id,
+      actor: req.user._id,
+      action: "lead_update",
+      description: "createdTime updated",
+      diff: { before: { createdTime: before }, after: { createdTime: date } },
+    });
+
+    res.json({ success: true, createdTime: lead.createdTime });
+  } catch (err) {
+    console.error("updateLeadCreatedTime error:", err);
+    res.status(500).json({ error: "Failed to update createdTime" });
+  }
+};
+
 module.exports = {
   getAllLeads,
   getLeadFilterMeta,
@@ -3142,5 +3318,6 @@ module.exports = {
   getAdminActivityStats,
   getCallerDetailStats,
   getAdminDashboardV2,
-  getLead
+  getLead,
+  updateLeadCreatedTime,
 };

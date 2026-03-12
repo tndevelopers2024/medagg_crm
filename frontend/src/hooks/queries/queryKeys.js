@@ -22,7 +22,7 @@ export const queryKeys = {
   todayFollowUps: () => ["todayFollowUps"],
   tomorrowFollowUps: () => ["tomorrowFollowUps"],
   callerStats: () => ["callerStats"],
-  dashboardStats: () => ["dashboardStats"],
+  dashboardStats: (params) => ["dashboardStats", params],
 
   // Admin stats (2min stale)
   adminDashboardV2: (params) => ["adminDashboardV2", params],

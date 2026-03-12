@@ -434,9 +434,10 @@ export default function LeadManagement() {
       <WhatsAppModal
         open={showWhatsApp}
         onClose={() => setShowWhatsApp(false)}
+        onSuccess={() => { loadActivities(); setActiveTab("activity"); }}
         phoneNumber={leadData.phone_number || leadData.phone || leadData.alt_phone || ""}
         leadName={leadData.full_name || leadData.name || "Lead"}
-        leadData={leadData}
+        leadData={{ ...leadData, _id: id }}
         combinedFields={combinedFields}
       />
 

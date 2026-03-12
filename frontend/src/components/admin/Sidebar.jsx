@@ -14,6 +14,7 @@ import {
   SettingOutlined,
   LogoutOutlined,
   CloudUploadOutlined,
+  FileTextOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../../contexts/AuthContext";
 import { clearUserData, getRoleName } from "../../utils/roleUtils";
@@ -136,6 +137,12 @@ export default function Sidebar({ open, onClose }) {
         permission: "campaigns.campaigns.view",
       },
       {
+        key: "/batches",
+        icon: <FileTextOutlined />,
+        label: "Batch Names",
+        permission: "campaigns.campaigns.view",
+      },
+      {
         key: "/campaigns/import",
         icon: <UploadOutlined />,
         label: "Bulk Upload",
@@ -206,7 +213,10 @@ export default function Sidebar({ open, onClose }) {
   }, [location.pathname, menuItems, settingsItems]);
 
   const handleMenuClick = ({ key }) => {
-    navigate(key);
+    // If already on this page, don't re-navigate (avoids clearing URL params and glitching)
+    if (location.pathname !== key) {
+      navigate(key);
+    }
     if (onClose) onClose();
   };
 

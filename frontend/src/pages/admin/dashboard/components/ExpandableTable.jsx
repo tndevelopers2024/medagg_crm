@@ -8,7 +8,7 @@ import { downloadTableCSV } from "./csvExport";
 const INITIAL_ITEMS = 10;
 const LOAD_MORE_INCREMENT = 10;
 
-export default function ExpandableTable({ title, columns, rows = [], chartConfig }) {
+export default function ExpandableTable({ title, columns, rows = [], chartConfig, onCellClick }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterValue, setFilterValue] = useState("");
   const [chartOpen, setChartOpen] = useState(false);
@@ -42,13 +42,26 @@ export default function ExpandableTable({ title, columns, rows = [], chartConfig
 
   // Convert columns from { key, label, render } to Ant Table format
   const antColumns = useMemo(() => {
-    return columns.map((col) => ({
-      key: col.key,
-      title: col.label,
-      dataIndex: col.key,
-      render: col.render ? (_, record) => col.render(record) : undefined,
-    }));
-  }, [columns]);
+    return columns.map((col, idx) => {
+      let render;
+      if (onCellClick && idx > 0) {
+        render = (val, record) => {
+          const content = col.render ? col.render(record) : (val ?? 0);
+          return (
+            <span
+              className="cursor-pointer hover:text-[#322554] hover:underline transition-colors"
+              onClick={(e) => { e.stopPropagation(); onCellClick(col.key, record); }}
+            >
+              {content}
+            </span>
+          );
+        };
+      } else {
+        render = col.render ? (_, record) => col.render(record) : undefined;
+      }
+      return { key: col.key, title: col.label, dataIndex: col.key, render };
+    });
+  }, [columns, onCellClick]);
 
   // Add unique keys recursively for tree data and limit visible items
   const dataSource = useMemo(() => {

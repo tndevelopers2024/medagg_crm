@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from "react";
 import { Card, Table, Tag, Space, Empty } from "antd";
 import { FiHeadphones } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
 import SectionHeader from "./SectionHeader";
 import ChartPanel from "./ChartPanel";
 import { downloadFlatCSV } from "./csvExport";
+import { buildDashboardCellUrl } from "../../../../utils/leadsNavigation";
 
 const CSV_COLUMNS = [
   { key: "callerName", label: "BD Name" },
@@ -11,57 +13,15 @@ const CSV_COLUMNS = [
   { key: "connectedCalls", label: "Connected Calls" },
   { key: "uniqueDials", label: "Unique Dials" },
   { key: "callDuration", label: "Call Duration" },
+  { key: "firstCall", label: "First Call", getValue: (r) => r.firstCall ? new Date(r.firstCall).toLocaleTimeString() : "—" },
   { key: "lastCall", label: "Last Call", getValue: (r) => r.lastCall ? new Date(r.lastCall).toLocaleTimeString() : "—" },
   { key: "idleHour", label: "Idle Hour" },
   { key: "dropouts", label: "Dropouts" },
   { key: "bookedLeads", label: "Booked Leads" },
 ];
 
-const TABLE_COLUMNS = [
-  {
-    key: "callerName",
-    title: "BD Name",
-    dataIndex: "callerName",
-    render: (name) => (
-      <Space>
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-pink-100">
-          <FiHeadphones className="text-sm text-pink-600" />
-        </span>
-        <span className="font-medium text-pink-600">{name}</span>
-      </Space>
-    ),
-  },
-  { key: "callsMade", title: "Calls Made", dataIndex: "callsMade" },
-  {
-    key: "connectedCalls",
-    title: "Connected Calls",
-    dataIndex: "connectedCalls",
-    render: (val) => <Tag color="blue">{val ?? 0}</Tag>,
-  },
-  { key: "uniqueDials", title: "Unique Dials", dataIndex: "uniqueDials" },
-  { key: "callDuration", title: "Call Duration", dataIndex: "callDuration" },
-  {
-    key: "lastCall",
-    title: "Last Call",
-    dataIndex: "lastCall",
-    render: (val) => (val ? new Date(val).toLocaleTimeString() : "—"),
-  },
-  { key: "idleHour", title: "Idle Hour", dataIndex: "idleHour" },
-  {
-    key: "dropouts",
-    title: "Dropouts",
-    dataIndex: "dropouts",
-    render: (val) => <Tag color="red">{val}</Tag>,
-  },
-  {
-    key: "bookedLeads",
-    title: "Booked Leads",
-    dataIndex: "bookedLeads",
-    render: (val) => <Tag color="green">{val}</Tag>,
-  },
-];
-
-export default function BdActivityTracker({ data = [] }) {
+export default function BdActivityTracker({ data = [], datePreset = "today", customRange = {} }) {
+  const navigate = useNavigate();
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterValue, setFilterValue] = useState("");
   const [chartOpen, setChartOpen] = useState(false);
@@ -72,6 +32,99 @@ export default function BdActivityTracker({ data = [] }) {
   }, [data, filterValue]);
 
   const handleDownload = () => downloadFlatCSV("BD_Activity_Tracker", CSV_COLUMNS, data);
+
+  const TABLE_COLUMNS = [
+    {
+      key: "callerName",
+      title: "BD Name",
+      dataIndex: "callerName",
+      render: (name, record) => (
+        <Space
+          className="cursor-pointer"
+          onClick={() => navigate(buildDashboardCellUrl({ callerFilter: [String(record.callerId)] }, "totalLeads", datePreset, customRange))}
+        >
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-pink-100">
+            <FiHeadphones className="text-sm text-pink-600" />
+          </span>
+          <span className="font-medium text-pink-600 hover:underline">{name}</span>
+        </Space>
+      ),
+    },
+    {
+      key: "callsMade",
+      title: "Calls Made",
+      dataIndex: "callsMade",
+      render: (val, record) => (
+        <span
+          className="cursor-pointer hover:text-[#322554] hover:underline transition-colors"
+          onClick={() => navigate(buildDashboardCellUrl({ callerFilter: [String(record.callerId)] }, "totalLeads", datePreset, customRange))}
+        >
+          {val ?? 0}
+        </span>
+      ),
+    },
+    {
+      key: "connectedCalls",
+      title: "Connected Calls",
+      dataIndex: "connectedCalls",
+      render: (val, record) => (
+        <Tag
+          color="blue"
+          className="cursor-pointer"
+          onClick={() => navigate(buildDashboardCellUrl({ callerFilter: [String(record.callerId)] }, "totalLeads", datePreset, customRange))}
+        >
+          {val ?? 0}
+        </Tag>
+      ),
+    },
+    {
+      key: "uniqueDials",
+      title: "Unique Dials",
+      dataIndex: "uniqueDials",
+      render: (val, record) => (
+        <span
+          className="cursor-pointer hover:text-[#322554] hover:underline transition-colors"
+          onClick={() => navigate(buildDashboardCellUrl({ callerFilter: [String(record.callerId)] }, "totalLeads", datePreset, customRange))}
+        >
+          {val ?? 0}
+        </span>
+      ),
+    },
+    { key: "callDuration", title: "Call Duration", dataIndex: "callDuration" },
+    {
+      key: "firstCall",
+      title: "First Call",
+      dataIndex: "firstCall",
+      render: (val) => (val ? new Date(val).toLocaleTimeString() : "—"),
+    },
+    {
+      key: "lastCall",
+      title: "Last Call",
+      dataIndex: "lastCall",
+      render: (val) => (val ? new Date(val).toLocaleTimeString() : "—"),
+    },
+    { key: "idleHour", title: "Idle Hour", dataIndex: "idleHour" },
+    {
+      key: "dropouts",
+      title: "Dropouts",
+      dataIndex: "dropouts",
+      render: (val) => <Tag color="red">{val}</Tag>,
+    },
+    {
+      key: "bookedLeads",
+      title: "Booked Leads",
+      dataIndex: "bookedLeads",
+      render: (val, record) => (
+        <Tag
+          color="green"
+          className="cursor-pointer"
+          onClick={() => navigate(buildDashboardCellUrl({ callerFilter: [String(record.callerId)], opdStatus: "Booked" }, "totalLeads", datePreset, customRange))}
+        >
+          {val}
+        </Tag>
+      ),
+    },
+  ];
 
   return (
     <Card>

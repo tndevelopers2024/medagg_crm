@@ -28,10 +28,10 @@ export function useTomorrowFollowUps(options = {}) {
   });
 }
 
-export function useCallerDashboardStats(options = {}) {
+export function useCallerDashboardStats(params = {}, options = {}) {
   return useQuery({
-    queryKey: queryKeys.dashboardStats(),
-    queryFn: fetchDashboardStats,
+    queryKey: queryKeys.dashboardStats(params),
+    queryFn: () => fetchDashboardStats(params),
     staleTime: STATS_STALE_TIME,
     ...options,
   });

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { FiMessageCircle, FiPlus, FiEdit3, FiTrash2, FiSave, FiChevronLeft, FiGlobe, FiUser, FiSearch, FiUpload } from "react-icons/fi";
+import { FiMessageCircle, FiPlus, FiEdit3, FiTrash2, FiSave, FiChevronLeft, FiGlobe, FiUser, FiSearch, FiUpload, FiX } from "react-icons/fi";
 import toast from "react-hot-toast";
-import { Modal, Input, Button, List, Tag, Checkbox, Empty, Tooltip } from "antd";
+import { Modal, Input, Button, List, Tag, Checkbox, Empty, Tooltip, Popover } from "antd";
 import {
   fetchWaTemplates,
   createWaTemplate,
@@ -12,12 +12,16 @@ import {
 } from "../../../../utils/api";
 import { useAuth } from "../../../../contexts/AuthContext";
 
-// Replace {{field_name}} placeholders with actual lead data values
-const interpolate = (text, leadData) => {
+// Replace {{field_name}} or {{field name}} placeholders with actual lead data values
+const interpolate = (text, data) => {
   if (!text) return "";
-  return text.replace(/\{\{(\w+)\}\}/g, (match, fieldName) => {
-    const key = fieldName.toLowerCase();
-    const val = leadData[key] ?? leadData[fieldName];
+  // Allow word chars + spaces inside {{ }}
+  return text.replace(/\{\{([\w ]+)\}\}/g, (match, fieldName) => {
+    const raw = fieldName.trim();
+    const lower = raw.toLowerCase();
+    const underscored = raw.toLowerCase().replace(/\s+/g, "_");
+    // Try: exact, lowercased, underscore-normalised
+    const val = data[raw] ?? data[lower] ?? data[underscored] ?? data[fieldName];
     if (val === undefined || val === null || val === "") return match;
     return String(val);
   });
@@ -36,6 +40,7 @@ const VIEW_FORM = "form"; // create or edit
 export default function WhatsAppModal({
   open,
   onClose,
+  onSuccess,
   phoneNumber,
   leadName,
   leadData = {},
@@ -55,6 +60,9 @@ export default function WhatsAppModal({
   // Track which template was applied (for logging)
   const [activeTemplateName, setActiveTemplateName] = useState("");
   const [showAllFields, setShowAllFields] = useState(false);
+  const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
+  const [fieldPickerSearch, setFieldPickerSearch] = useState("");
+  const [pinnedCallerKeys, setPinnedCallerKeys] = useState(new Set());
 
   // Template form state
   const [view, setView] = useState(VIEW_MAIN);
@@ -81,28 +89,56 @@ export default function WhatsAppModal({
       loadTemplates();
       setView(VIEW_MAIN);
       setShowAllFields(false);
+      setFieldPickerOpen(false);
+      setFieldPickerSearch("");
+      setPinnedCallerKeys(new Set());
     }
   }, [open, loadTemplates]);
 
+  // user object is { success, data: { name, email, phone } } from getMe()
+  const userData = user?.data || user || {};
+  const callerName = userData.name || "";
+
+  // Caller / user info fields — resolved from the logged-in user
+  const callerFields = [
+    { key: "CALLER_NAME",  label: "Caller Name",  value: callerName },
+    { key: "CALLER_EMAIL", label: "Caller Email", value: userData.email || "" },
+    { key: "CALLER_PHONE", label: "Caller Phone", value: userData.phone || "" },
+  ];
+  const interpolationContext = {
+    ...leadData,
+    ...Object.fromEntries(callerFields.map((f) => [f.key, f.value])),
+    "MY NAME": callerName,
+    "MY_NAME": callerName,
+    "my name": callerName,
+    "my_name": callerName,
+  };
+
   // Build available field names from combinedFields + leadData keys
-  const availableFields = (() => {
-    const fieldsFromConfig = combinedFields.map((f) => ({
+  const leadFields = (() => {
+    const fields = combinedFields.map((f) => ({
       key: f.fieldName,
       label: f.displayLabel || f.fieldName,
     }));
-    const configKeys = new Set(fieldsFromConfig.map((f) => f.key.toLowerCase()));
-
-    // Add any leadData keys not already covered
+    const configKeys = new Set(fields.map((f) => f.key.toLowerCase()));
     Object.keys(leadData).forEach((k) => {
       if (!configKeys.has(k.toLowerCase())) {
-        fieldsFromConfig.push({
+        fields.push({
           key: k,
           label: k.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
         });
       }
     });
-    return fieldsFromConfig;
+    return fields;
   })();
+
+  // What's shown as tags in Insert Field = lead fields + pinned caller fields
+  const availableFields = [
+    ...leadFields,
+    ...callerFields
+      .filter((f) => pinnedCallerKeys.has(f.key))
+      .map((f) => ({ key: f.key, label: f.label, isCaller: true })),
+  ];
 
   const getTextAreaEl = () => {
     const ref = textareaRef.current;
@@ -134,7 +170,7 @@ export default function WhatsAppModal({
       return;
     }
 
-    const finalMessage = interpolate(message, leadData);
+    const finalMessage = interpolate(message, interpolationContext);
 
     let num = String(phoneNumber || "").replace(/[^\d+]/g, "");
     if (num.startsWith("0")) num = num.slice(1);
@@ -147,15 +183,18 @@ export default function WhatsAppModal({
       return;
     }
 
-    const waUrl = `https://wa.me/${num}?text=${encodeURIComponent(finalMessage)}`;
-    window.open(waUrl, "_blank");
-
-    // Log activity (fire-and-forget — don't block the send)
     const leadId = leadData._id || leadData.id;
     if (leadId) {
-      logWhatsAppSend({ leadId, message: finalMessage, templateName: activeTemplateName || undefined })
-        .catch((err) => console.warn("Failed to log WhatsApp activity:", err));
+      try {
+        await logWhatsAppSend({ leadId, message: finalMessage, templateName: activeTemplateName || undefined });
+        if (onSuccess) onSuccess();
+      } catch (err) {
+        console.warn("Failed to log WhatsApp activity:", err);
+      }
     }
+
+    const waUrl = `https://wa.me/${num}?text=${encodeURIComponent(finalMessage)}`;
+    window.open(waUrl, "_blank");
 
     setMessage("");
     setActiveTemplateName("");
@@ -594,15 +633,131 @@ export default function WhatsAppModal({
 
       {/* Insert field buttons */}
       <div className="space-y-1 mb-4">
-        <label className="text-xs text-gray-600">Insert Field</label>
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-gray-600">Insert Field</label>
+          <Popover
+            open={fieldPickerOpen}
+            onOpenChange={setFieldPickerOpen}
+            trigger="click"
+            placement="bottomRight"
+            content={
+              <div style={{ width: 260 }}>
+                <Input
+                  size="small"
+                  prefix={<FiSearch className="text-gray-400 w-3 h-3" />}
+                  placeholder="Search fields..."
+                  value={fieldPickerSearch}
+                  onChange={(e) => setFieldPickerSearch(e.target.value)}
+                  className="mb-2"
+                  allowClear
+                  autoFocus
+                />
+                <div style={{ maxHeight: 280, overflowY: "auto" }}>
+                  {/* Lead Info group */}
+                  {(() => {
+                    const filtered = leadFields.filter((f) =>
+                      f.label.toLowerCase().includes(fieldPickerSearch.toLowerCase()) ||
+                      f.key.toLowerCase().includes(fieldPickerSearch.toLowerCase())
+                    );
+                    if (!filtered.length) return null;
+                    return (
+                      <>
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-1 mb-1">Lead Info</p>
+                        {filtered.map((f) => (
+                          <div
+                            key={f.key}
+                            className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-violet-50 cursor-pointer group"
+                            onClick={() => {
+                              insertField(f.key, setMessage, message);
+                              setFieldPickerOpen(false);
+                              setFieldPickerSearch("");
+                            }}
+                          >
+                            <span className="text-sm text-gray-700">{f.label}</span>
+                            <code className="text-[10px] text-violet-500 opacity-0 group-hover:opacity-100">{`{{${f.key}}}`}</code>
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
+
+                  {/* Caller / User Info group */}
+                  {(() => {
+                    const filtered = callerFields.filter((f) =>
+                      f.label.toLowerCase().includes(fieldPickerSearch.toLowerCase()) ||
+                      f.key.toLowerCase().includes(fieldPickerSearch.toLowerCase())
+                    );
+                    if (!filtered.length) return null;
+                    return (
+                      <>
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-1 mb-1 mt-2">Caller Info</p>
+                        {filtered.map((f) => (
+                          <div
+                            key={f.key}
+                            className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-blue-50 cursor-pointer group"
+                            onClick={() => {
+                              setPinnedCallerKeys((prev) => new Set([...prev, f.key]));
+                              insertField(f.key, setMessage, message);
+                              setFieldPickerOpen(false);
+                              setFieldPickerSearch("");
+                            }}
+                          >
+                            <div className="flex flex-col">
+                              <span className="text-sm text-gray-700">{f.label}</span>
+                              {f.value && (
+                                <span className="text-[10px] text-gray-400">{f.value}</span>
+                              )}
+                            </div>
+                            <code className="text-[10px] text-blue-500 opacity-0 group-hover:opacity-100">{`{{${f.key}}}`}</code>
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
+
+                  {/* Empty state */}
+                  {fieldPickerSearch &&
+                    !leadFields.some((f) => f.label.toLowerCase().includes(fieldPickerSearch.toLowerCase()) || f.key.toLowerCase().includes(fieldPickerSearch.toLowerCase())) &&
+                    !callerFields.some((f) => f.label.toLowerCase().includes(fieldPickerSearch.toLowerCase()) || f.key.toLowerCase().includes(fieldPickerSearch.toLowerCase())) && (
+                      <p className="text-xs text-gray-400 text-center py-3">No fields found</p>
+                    )}
+                </div>
+              </div>
+            }
+          >
+            <Button
+              type="link"
+              size="small"
+              icon={<FiPlus className="w-3 h-3" />}
+              style={{ color: "#7c3aed", padding: 0, height: "auto" }}
+            >
+              Select Field
+            </Button>
+          </Popover>
+        </div>
+
         <div className="flex flex-wrap gap-1.5">
           {(showAllFields ? availableFields : availableFields.slice(0, 12)).map((f) => (
             <Tag
               key={f.key}
               className="cursor-pointer hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700"
+              color={f.isCaller ? "blue" : undefined}
               onClick={() => insertField(f.key, setMessage, message)}
             >
               {f.label}
+              {f.isCaller && (
+                <FiX
+                  className="inline ml-1 w-2.5 h-2.5 opacity-60 hover:opacity-100"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPinnedCallerKeys((prev) => {
+                      const next = new Set(prev);
+                      next.delete(f.key);
+                      return next;
+                    });
+                  }}
+                />
+              )}
             </Tag>
           ))}
           {availableFields.length > 12 && (
@@ -621,7 +776,7 @@ export default function WhatsAppModal({
         <div className="space-y-1">
           <label className="text-xs text-gray-600">Preview</label>
           <div className="rounded-xl border border-green-100 bg-green-50/50 px-3 py-2 text-sm text-gray-800 whitespace-pre-wrap">
-            {interpolate(message, leadData)}
+            {interpolate(message, interpolationContext)}
           </div>
         </div>
       )}

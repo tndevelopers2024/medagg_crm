@@ -47,8 +47,8 @@ router.use(protect);
 router.use("/help-request", helpRequestRoutes);
 
 // Leads — named routes must come before /:id to avoid matching as an ID param
-router.get("/leads/assigned", checkPermission("leads.all.view"), getMyAssignedLeads);
-router.get("/leads/yesterday", checkPermission("leads.all.view"), getYesterdayAssignedLeads);
+router.get("/leads/assigned", checkPermission("leads.assigned.view"), getMyAssignedLeads);
+router.get("/leads/yesterday", checkPermission("leads.assigned.view"), getYesterdayAssignedLeads);
 router.get("/leads/:id", checkPermission("leads.detail.view"), getLeadDetail);
 router.patch("/leads/:id/status", checkPermission("leads.detail.editStatus"), updateLeadStatus);
 router.patch("/leads/:id", checkPermission("leads.detail.editFields"), updateLeadDetails);
@@ -61,9 +61,9 @@ router.post("/leads/:id/calls", checkPermission("leads.detail.calls"), logCall);
 router.get("/leads/:id/calls", checkPermission("leads.detail.calls"), getLeadCallLogs);
 
 // Follow-ups
-router.get("/followups/today", checkPermission("leads.all.view"), getTodayFollowUps);
-router.get("/followups", checkPermission("leads.all.view"), getFollowUpsByRange);
-router.get("/followups/tomorrow", checkPermission("leads.all.view"), getTomorrowFollowUps);
+router.get("/followups/today", checkPermission("leads.assigned.view"), getTodayFollowUps);
+router.get("/followups", checkPermission("leads.assigned.view"), getFollowUpsByRange);
+router.get("/followups/tomorrow", checkPermission("leads.assigned.view"), getTomorrowFollowUps);
 
 // Stats
 router.get("/stats/dashboard", checkPermission("dashboard.dashboard.view"), getDashboardStats);

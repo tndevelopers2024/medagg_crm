@@ -23,6 +23,7 @@ const {
   deleteLeadDocument,
   deleteLeads,
   getLead,
+  updateLeadCreatedTime,
 } = require("../controllers/leadController");
 
 const { protect, authorize, checkPermission } = require("../middleware/auth");
@@ -63,6 +64,9 @@ router.get("/assigned", protect, checkPermission("leads.all.view"), getAssignedL
 
 // Single lead detail
 router.get("/:id", protect, checkPermission("leads.detail.view"), getLead);
+
+// Update created-on date (admin only)
+router.patch("/:id/created-time", protect, checkPermission("leads.all.bulkUpdate"), updateLeadCreatedTime);
 
 // Dashboard stats
 router.get("/admin/stats/dashboard", protect, getAdminDashboardStats);

@@ -1,6 +1,6 @@
 // src/pages/admin/allleads/page.jsx — Thin orchestrator
 import React, { useMemo, useCallback, useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Card, Button } from "antd";
 import { FiBell } from "react-icons/fi";
 import { formatPhoneNumber } from "../../../utils/leadHelpers";
@@ -13,6 +13,7 @@ import BulkEditSidebar from "../../../components/admin/BulkEditSidebar";
 import LeadFilters from "../../../components/admin/leads/LeadFilters";
 import LeadActions from "../../../components/admin/leads/LeadActions";
 import { COLUMN_DEFINITIONS, buildFieldColumns } from "../../../utils/columnConfig.jsx";
+import { updateLeadCreatedTime } from "../../../utils/api";
 import useColumnVisibility from "../../../hooks/useColumnVisibility";
 
 // Local hooks
@@ -35,7 +36,6 @@ import LeadsModalsSection from "./components/LeadsModalsSection";
 
 export default function LeadsManagement() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { user, isAdmin, isCaller, loading: authLoading, hasPermission } = useAuth();
   const { socket, isConnected } = useSocket();
   usePageTitle("Leads Management", "Manage your leads effectively");
@@ -98,23 +98,6 @@ export default function LeadsManagement() {
       triggerFetch();
     }
   }, [filters.filterState, triggerFetch]);
-
-  // Apply filter from dashboard navigation
-  useEffect(() => {
-    if (location.state?.filter) {
-      const { filter } = location.state;
-      if (filter.dateMode) filters.setDateMode(filter.dateMode);
-      if (filter.leadStatus) filters.setLeadStatus(Array.isArray(filter.leadStatus) ? filter.leadStatus : [filter.leadStatus]);
-      if (filter.opdStatus) filters.setOpdStatus(filter.opdStatus);
-      if (filter.ipdStatus) filters.setIpdStatus(filter.ipdStatus);
-      if (filter.campaignFilter) {
-        filters.setCampaignFilter(
-          Array.isArray(filter.campaignFilter) ? filter.campaignFilter : [filter.campaignFilter]
-        );
-      }
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [location.state]);
 
   // Socket
   const { highlight } = useLeadSocket({
@@ -332,6 +315,11 @@ export default function LeadsManagement() {
     );
   };
 
+  const handleUpdateCreatedTime = useCallback(async (leadId, createdTime) => {
+    await updateLeadCreatedTime(leadId, createdTime);
+    triggerFetch();
+  }, [triggerFetch]);
+
   // Column context
   const columnCtx = useMemo(
     () => ({
@@ -346,8 +334,9 @@ export default function LeadsManagement() {
       toggleAllCurrentPage: selection.toggleAllCurrentPage,
       isAllCurrentSelected: selection.isAllCurrentSelected,
       fieldConfigs,
+      onUpdateCreatedTime: isAdmin ? handleUpdateCreatedTime : null,
     }),
-    [callerMap, selection.selected, isAdmin, selection.isAllCurrentSelected, selection.toggleAllCurrentPage]
+    [callerMap, selection.selected, isAdmin, selection.isAllCurrentSelected, selection.toggleAllCurrentPage, handleUpdateCreatedTime]
   );
 
   /* ----------------------------- render ----------------------------- */
@@ -430,6 +419,8 @@ export default function LeadsManagement() {
           diag={filters.diagnostics} setDiag={filters.setDiagnostics} diagOptions={filters.diagOptions}
           campaign={filters.campaignFilter} setCampaign={filters.setCampaignFilter} campaignOptions={filters.campaignOptions}
           search={filters.search} setSearch={filters.setSearch}
+          statusFrom={filters.statusFrom} setStatusFrom={filters.setStatusFrom}
+          statusTo={filters.statusTo} setStatusTo={filters.setStatusTo}
           fieldConfigs={fieldConfigs}
           customFieldFilters={filters.customFieldFilters}
           onCustomFieldFilter={filters.setCustomFieldFilter}
@@ -447,6 +438,10 @@ export default function LeadsManagement() {
           opdDateTo={filters.opdDateTo} setOpdDateTo={filters.setOpdDateTo}
           ipdDate={filters.ipdDate} setIpdDate={filters.setIpdDate}
           ipdDateTo={filters.ipdDateTo} setIpdDateTo={filters.setIpdDateTo}
+          diagStatus={filters.diagBookingStatus} setDiagStatus={filters.setDiagBookingStatus}
+          diagStatusOptions={['Diagnostics Status', 'Booked', 'Done', 'Cancelled']}
+          diagDate={filters.diagDate} setDiagDate={filters.setDiagDate}
+          diagDateTo={filters.diagDateTo} setDiagDateTo={filters.setDiagDateTo}
         />
       </section>
 

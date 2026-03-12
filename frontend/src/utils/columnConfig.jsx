@@ -1,6 +1,49 @@
-import React from "react";
-import { FiChevronRight } from "react-icons/fi";
+import React, { useState } from "react";
+import { FiChevronRight, FiEdit2 } from "react-icons/fi";
+import { DatePicker, Popover } from "antd";
+import dayjs from "dayjs";
 import { formatDateIN, formatDateTimeIN } from "./leadHelpers";
+
+function InlineCreatedTimePicker({ lead, onUpdate }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleChange = async (dayjsVal) => {
+    if (!dayjsVal) return;
+    setSaving(true);
+    try {
+      await onUpdate(lead.id, dayjsVal.toISOString());
+    } finally {
+      setSaving(false);
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        trigger="click"
+        content={
+          <DatePicker
+            showTime
+            format="DD/MM/YYYY HH:mm"
+            defaultValue={lead.createdTime ? dayjs(lead.createdTime) : dayjs()}
+            onChange={handleChange}
+            onOk={handleChange}
+            showNow={false}
+          />
+        }
+      >
+        <span className="group inline-flex items-center gap-1 cursor-pointer">
+          <span>{formatDateTimeIN(lead.createdTime)}</span>
+          <FiEdit2 className="opacity-0 group-hover:opacity-50 text-[10px] text-violet-500 shrink-0" />
+        </span>
+      </Popover>
+    </div>
+  );
+}
 
 /**
  * Column definition shape:
@@ -99,7 +142,12 @@ export const COLUMN_DEFINITIONS = [
     sticky: false,
     thClassName: "px-4 py-3 font-medium",
     tdClassName: "px-4 py-3 text-xs text-gray-400",
-    render: (lead) => formatDateTimeIN(lead.createdTime),
+    render: (lead, ctx) => {
+      if (ctx.isAdmin && ctx.onUpdateCreatedTime) {
+        return <InlineCreatedTimePicker lead={lead} onUpdate={ctx.onUpdateCreatedTime} />;
+      }
+      return formatDateTimeIN(lead.createdTime);
+    },
   },
   {
     id: "email",
