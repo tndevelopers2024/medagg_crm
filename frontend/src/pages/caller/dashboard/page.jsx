@@ -522,6 +522,7 @@ export default function CallersDashboard() {
         const tasksTomorrowCount = stats.tasksTomorrowCount || tomorrowTasks.length || 0;
         const pendingTasksCount = stats.pendingTasksCount || 0;
         const tomorrowOpdDiagBooked = stats.tomorrowOpdDiagBooked || 0;
+        const tomorrowIpBooked = stats.tomorrowIpBooked || 0;
 
         // 3. Upcoming reminders (needs client-side calc on todayTasks)
         const upcomingHour = todayTasks
@@ -554,6 +555,7 @@ export default function CallersDashboard() {
             lastCallAgoMin,
             upcomingHour,
             statusCounts,
+            tomorrowIpBooked,
         };
     }, [todayTasks, tomorrowTasks, stats]);
 
@@ -647,7 +649,7 @@ export default function CallersDashboard() {
                     </Col>
                     <Col xs={24} sm={12} md={12} lg={6} xl={6}>
                         <StatCard
-                            title="Tomorrow's Appointments"
+                            title="Tomorrow OP & Diag"
                             value={computed.tomorrowOpdDiagBooked}
                             sub="OPD + Diagnostics Booked"
                             icon={CalendarOutlined}
@@ -655,6 +657,19 @@ export default function CallersDashboard() {
                             onClick={() => {
                                 const t = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000);
                                 navigate(buildLeadsUrl({ opdDate: t.toISOString().slice(0, 10), opdStatus: 'Booked' }));
+                            }}
+                        />
+                    </Col>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
+                        <StatCard
+                            title="Tomorrow's IPD"
+                            value={computed.tomorrowIpBooked}
+                            sub="IPD Booked Tomorrow"
+                            icon={CalendarOutlined}
+                            color="pink"
+                            onClick={() => {
+                                const t = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000);
+                                navigate(buildLeadsUrl({ ipdDate: t.toISOString().slice(0, 10), ipdStatus: 'Booked' }));
                             }}
                         />
                     </Col>

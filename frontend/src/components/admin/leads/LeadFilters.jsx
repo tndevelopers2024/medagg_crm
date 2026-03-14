@@ -12,6 +12,7 @@ const STANDARD_CONFIG = {
     date: { id: 'date', label: 'Created On', defaultValue: '7d' },
     campaign: { id: 'campaign', label: 'Campaign', defaultValue: [] },
     status: { id: 'status', label: 'Lead Status', defaultValue: [] },
+    lostStatus: { id: 'lostStatus', label: 'Lost Status', defaultValue: [] },
     source: { id: 'source', label: 'Source', defaultValue: 'All Sources' },
     caller: { id: 'caller', label: 'Assignee', defaultValue: [] },
     followup: { id: 'followup', label: 'Call Later', defaultValue: 'All' },
@@ -128,6 +129,7 @@ const LeadFilters = ({
     source, setSource, sourceOptions,
     caller, setCaller, callerOptions,
     status, setStatus, statusOptions,
+    lostStatus, setLostStatus, lostStatusOptions,
     followup, setFollowup, followupOptions,
     followupFrom, setFollowupFrom, followupTo, setFollowupTo,
     opd, setOpd, opdOptions,
@@ -137,6 +139,12 @@ const LeadFilters = ({
     search, setSearch,
     statusFrom, setStatusFrom,
     statusTo, setStatusTo,
+    statusDate, setStatusDate,
+    statusDateTo, setStatusDateTo,
+    lostStatusFrom, setLostStatusFrom,
+    lostStatusTo, setLostStatusTo,
+    lostStatusDate, setLostStatusDate,
+    lostStatusDateTo, setLostStatusDateTo,
     fieldConfigs = [],
     customFieldFilters = {},
     onCustomFieldFilter,
@@ -160,15 +168,17 @@ const LeadFilters = ({
 }) => {
     const allFilters = useMemo(() => {
         const standard = Object.values(STANDARD_CONFIG);
-        const dynamic = fieldConfigs.map(fc => ({
-            id: fc._id || fc.fieldName,
-            fieldName: fc.fieldName,
-            label: fc.displayLabel || fc.fieldName,
-            defaultValue: '',
-            isCustom: true,
-            options: fc.options || [],
-            type: fc.fieldType
-        }));
+        const dynamic = fieldConfigs
+            .filter(fc => (fc.displayLabel || fc.fieldName || "").toLowerCase().trim() !== "call later date")
+            .map(fc => ({
+                id: fc._id || fc.fieldName,
+                fieldName: fc.fieldName,
+                label: fc.displayLabel || fc.fieldName,
+                defaultValue: '',
+                isCustom: true,
+                options: fc.options || [],
+                type: fc.fieldType
+            }));
         return [...standard, ...dynamic];
     }, [fieldConfigs]);
 
@@ -225,6 +235,8 @@ const LeadFilters = ({
                 setStatus([]);
                 setStatusFrom?.('');
                 setStatusTo?.('');
+                setStatusDate?.('');
+                setStatusDateTo?.('');
                 onOperatorChange?.('status', 'is');
                 onIncludeTextChange?.('status', '');
                 break;
@@ -476,7 +488,10 @@ const LeadFilters = ({
                                 onOperatorChange={(op) => {
                                     onOperatorChange?.('status', op);
                                     if (op !== 'is_include') onIncludeTextChange?.('status', '');
-                                    if (op !== 'between') { setStatusFrom?.(''); setStatusTo?.(''); }
+                                    if (op !== 'between') { 
+                                        setStatusFrom?.(''); setStatusTo?.(''); 
+                                        setStatusDate?.(''); setStatusDateTo?.('');
+                                    }
                                 }}
                                 onRemove={() => removeFilter('status')}>
                                 {statusOp === 'is_include' ? (
@@ -512,6 +527,20 @@ const LeadFilters = ({
                                                 (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
                                             }
                                         />
+                                        <DatePicker.RangePicker
+                                            size="small"
+                                            variant="borderless"
+                                            format="DD/MM/YYYY"
+                                            value={[
+                                                statusDate ? dayjs(statusDate) : null,
+                                                statusDateTo ? dayjs(statusDateTo) : null,
+                                            ]}
+                                            onChange={(dates) => {
+                                                setStatusDate?.(dates?.[0]?.format('YYYY-MM-DD') || '');
+                                                setStatusDateTo?.(dates?.[1]?.format('YYYY-MM-DD') || '');
+                                            }}
+                                            style={{ minWidth: 200 }}
+                                        />
                                     </Space>
                                 ) : (
                                     <Select
@@ -522,6 +551,90 @@ const LeadFilters = ({
                                         onChange={(val) => setStatus(val)}
                                         options={stageOpts}
                                         placeholder="Select statuses..."
+                                        popupMatchSelectWidth={false}
+                                        style={{ minWidth: 160 }}
+                                        maxTagCount="responsive"
+                                        showSearch
+                                        filterOption={(input, option) =>
+                                            (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+                                        }
+                                    />
+                                )}
+                            </ConditionPill>
+                        );
+                    }
+                    if (filterId === 'lostStatus') {
+                        const lostStatusOp = operators['lostStatus'] || 'is';
+                        const stageOpts = (lostStatusOptions || []).map(s => ({ label: s.replace(/_/g, ' '), value: s }));
+                        return (
+                            <ConditionPill key="lostStatus" label="Lost Status" operator={lostStatusOp}
+                                operatorOptions={STATUS_OPERATOR_OPTIONS}
+                                onOperatorChange={(op) => {
+                                    onOperatorChange?.('lostStatus', op);
+                                    if (op !== 'is_include') onIncludeTextChange?.('lostStatus', '');
+                                    if (op !== 'between') {
+                                        setLostStatusFrom?.(''); setLostStatusTo?.('');
+                                        setLostStatusDate?.(''); setLostStatusDateTo?.('');
+                                    }
+                                }}
+                                onRemove={() => removeFilter('lostStatus')}>
+                                {lostStatusOp === 'is_include' ? (
+                                    <Input size="small" variant="borderless" placeholder="Type to search..." value={filterIncludeTexts['lostStatus'] || ''} onChange={e => onIncludeTextChange?.('lostStatus', e.target.value)} style={{ width: 150 }} />
+                                ) : lostStatusOp === 'between' ? (
+                                    <Space size={4}>
+                                        <Select
+                                            size="small"
+                                            variant="borderless"
+                                            value={lostStatusFrom || undefined}
+                                            onChange={setLostStatusFrom}
+                                            options={stageOpts}
+                                            placeholder="From stage..."
+                                            popupMatchSelectWidth={false}
+                                            style={{ minWidth: 120 }}
+                                            showSearch
+                                            filterOption={(input, option) =>
+                                                (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+                                            }
+                                        />
+                                        <span className="text-xs font-semibold text-violet-400">→</span>
+                                        <Select
+                                            size="small"
+                                            variant="borderless"
+                                            value={lostStatusTo || undefined}
+                                            onChange={setLostStatusTo}
+                                            options={stageOpts}
+                                            placeholder="To stage..."
+                                            popupMatchSelectWidth={false}
+                                            style={{ minWidth: 120 }}
+                                            showSearch
+                                            filterOption={(input, option) =>
+                                                (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+                                            }
+                                        />
+                                        <DatePicker.RangePicker
+                                            size="small"
+                                            variant="borderless"
+                                            format="DD/MM/YYYY"
+                                            value={[
+                                                lostStatusDate ? dayjs(lostStatusDate) : null,
+                                                lostStatusDateTo ? dayjs(lostStatusDateTo) : null,
+                                            ]}
+                                            onChange={(dates) => {
+                                                setLostStatusDate?.(dates?.[0]?.format('YYYY-MM-DD') || '');
+                                                setLostStatusDateTo?.(dates?.[1]?.format('YYYY-MM-DD') || '');
+                                            }}
+                                            style={{ minWidth: 200 }}
+                                        />
+                                    </Space>
+                                ) : (
+                                    <Select
+                                        mode="multiple"
+                                        size="small"
+                                        variant="borderless"
+                                        value={lostStatus}
+                                        onChange={(val) => setLostStatus(val)}
+                                        options={stageOpts}
+                                        placeholder="Select lost reasons..."
                                         popupMatchSelectWidth={false}
                                         style={{ minWidth: 160 }}
                                         maxTagCount="responsive"
@@ -921,23 +1034,34 @@ const LeadFilters = ({
                     trigger={["click"]}
                     onOpenChange={(open) => { if (!open) setConditionSearch(''); }}
                     dropdownRender={(menu) => (
-                        <div className="bg-white rounded-lg shadow-lg border border-gray-100 overflow-hidden" style={{ minWidth: 220 }}>
-                            <div className="p-2 border-b border-gray-100">
+                        <div className="bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col" style={{ minWidth: 260 }}>
+                            <div className="p-3 border-b border-gray-50 bg-gray-50/50">
                                 <Input
                                     size="small"
-                                    placeholder="Search filters..."
+                                    placeholder="Search conditions..."
                                     prefix={<SearchOutlined className="text-gray-400" />}
                                     value={conditionSearch}
                                     onChange={(e) => setConditionSearch(e.target.value)}
                                     allowClear
                                     autoFocus
+                                    className="rounded-lg border-gray-200 shadow-sm"
                                 />
                             </div>
-                            <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                                {menu}
+                            <div className="custom-scrollbar">
+                                {React.cloneElement(menu, {
+                                    style: { 
+                                        maxHeight: 350, 
+                                        overflowY: 'auto', 
+                                        boxShadow: 'none', 
+                                        border: 'none',
+                                        background: 'transparent'
+                                    }
+                                })}
                             </div>
                             {addConditionItems.length === 0 && (
-                                <div className="px-4 py-3 text-xs text-gray-400 text-center">No filters match</div>
+                                <div className="px-4 py-8 text-xs text-gray-400 text-center italic">
+                                    No filters match your search
+                                </div>
                             )}
                         </div>
                     )}

@@ -35,6 +35,17 @@ export function buildQueryParams(filters, page, pageSize) {
   if (ops.status !== 'is_include' && ops.status !== 'between' && filters.leadStatus && filters.leadStatus.length > 0) {
     params.status = filters.leadStatus.join(',');
   }
+  if (ops.lostStatus !== 'between' && filters.lostStatus && filters.lostStatus.length > 0) {
+    params.lostStatus = filters.lostStatus.join(',');
+    if (ops.lostStatus === 'is_not') params.lostStatusOp = 'is_not';
+  }
+  else if (ops.lostStatus === 'between') {
+    params.lostStatusOp = 'between';
+    if (filters.lostStatusFrom) params.lostStatusFrom = filters.lostStatusFrom;
+    if (filters.lostStatusTo) params.lostStatusTo = filters.lostStatusTo;
+    if (filters.lostStatusDate) params.lostStatusDate = filters.lostStatusDate;
+    if (filters.lostStatusDateTo) params.lostStatusDateTo = filters.lostStatusDateTo;
+  }
   const followupOp = ops.followup;
   if (followupOp === 'is_empty') {
     params.followupOp = 'is_empty';
@@ -94,6 +105,8 @@ export function buildQueryParams(filters, page, pageSize) {
     params.statusOp = 'between';
     if (filters.statusFrom) params.statusFrom = filters.statusFrom;
     if (filters.statusTo) params.statusTo = filters.statusTo;
+    if (filters.statusDate) params.statusDate = filters.statusDate;
+    if (filters.statusDateTo) params.statusDateTo = filters.statusDateTo;
   }
 
   if (ops.source === 'is_empty') { params.sourceOp = 'is_empty'; }

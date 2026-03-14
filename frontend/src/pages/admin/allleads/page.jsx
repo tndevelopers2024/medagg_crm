@@ -183,6 +183,7 @@ export default function LeadsManagement() {
   // Analytics
   const analytics = useLeadAnalytics({
     leadStatus: filters.leadStatus,
+    lostStatus: filters.lostStatus,
     callerFilter: filters.callerFilter,
     source: filters.source,
     opdStatus: filters.opdStatus,
@@ -202,6 +203,11 @@ export default function LeadsManagement() {
     opdDateTo: filters.opdDateTo,
     ipdDate: filters.ipdDate,
     ipdDateTo: filters.ipdDateTo,
+    search: filters.search,
+    statusFrom: filters.statusFrom,
+    statusTo: filters.statusTo,
+    statusDate: filters.statusDate,
+    statusDateTo: filters.statusDateTo,
     fieldConfigs,
     notify,
   });
@@ -412,6 +418,7 @@ export default function LeadsManagement() {
           source={filters.source} setSource={filters.setSource} sourceOptions={filters.sourceOptions}
           caller={filters.callerFilter} setCaller={filters.setCallerFilter} callerOptions={filters.callerOptions}
           status={filters.leadStatus} setStatus={filters.setLeadStatus} statusOptions={filters.leadStatusOptions}
+          lostStatus={filters.lostStatus} setLostStatus={filters.setLostStatus} lostStatusOptions={filters.lostStatusOptions}
           followup={filters.followupFilter} setFollowup={filters.setFollowupFilter} followupOptions={filters.followupOptions}
           followupFrom={filters.followupFrom} setFollowupFrom={filters.setFollowupFrom} followupTo={filters.followupTo} setFollowupTo={filters.setFollowupTo}
           opd={filters.opdStatus} setOpd={filters.setOpdStatus} opdOptions={filters.opdOptions}
@@ -421,6 +428,12 @@ export default function LeadsManagement() {
           search={filters.search} setSearch={filters.setSearch}
           statusFrom={filters.statusFrom} setStatusFrom={filters.setStatusFrom}
           statusTo={filters.statusTo} setStatusTo={filters.setStatusTo}
+          statusDate={filters.statusDate} setStatusDate={filters.setStatusDate}
+          statusDateTo={filters.statusDateTo} setStatusDateTo={filters.setStatusDateTo}
+          lostStatusFrom={filters.lostStatusFrom} setLostStatusFrom={filters.setLostStatusFrom}
+          lostStatusTo={filters.lostStatusTo} setLostStatusTo={filters.setLostStatusTo}
+          lostStatusDate={filters.lostStatusDate} setLostStatusDate={filters.setLostStatusDate}
+          lostStatusDateTo={filters.lostStatusDateTo} setLostStatusDateTo={filters.setLostStatusDateTo}
           fieldConfigs={fieldConfigs}
           customFieldFilters={filters.customFieldFilters}
           onCustomFieldFilter={filters.setCustomFieldFilter}

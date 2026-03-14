@@ -952,7 +952,7 @@ const getDashboardStats = async (req, res) => {
       { $count: "count" }
     ]);
 
-    const [tomorrowOpdBooked, tomorrowDiagBooked] = await Promise.all([
+    const [tomorrowOpdBooked, tomorrowDiagBooked, tomorrowIpBookedArr] = await Promise.all([
       Lead.aggregate([
         { $match: { assignedTo: callerId } },
         { $unwind: "$opBookings" },
@@ -964,6 +964,13 @@ const getDashboardStats = async (req, res) => {
         { $match: { assignedTo: callerId } },
         { $unwind: "$diagnosticBookings" },
         { $match: { "diagnosticBookings.status": "booked", "diagnosticBookings.date": { $gte: tomorrowStart, $lte: tomorrowEnd } } },
+        { $group: { _id: "$_id" } },
+        { $count: "count" }
+      ]),
+      Lead.aggregate([
+        { $match: { assignedTo: callerId } },
+        { $unwind: "$ipBookings" },
+        { $match: { "ipBookings.status": "booked", "ipBookings.date": { $gte: tomorrowStart, $lte: tomorrowEnd } } },
         { $group: { _id: "$_id" } },
         { $count: "count" }
       ]),
@@ -1024,6 +1031,7 @@ const getDashboardStats = async (req, res) => {
       diagnosticBookedToday: diagnosticBookedToday[0]?.count || 0,
       diagnosticDoneToday: diagnosticDoneToday[0]?.count || 0,
       tomorrowOpdDiagBooked: (tomorrowOpdBooked[0]?.count || 0) + (tomorrowDiagBooked[0]?.count || 0),
+      tomorrowIpBooked: tomorrowIpBookedArr[0]?.count || 0,
       statusCounts
     });
 

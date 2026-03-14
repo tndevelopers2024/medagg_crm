@@ -9,6 +9,11 @@ const DEFAULTS = {
   source: "All Sources",
   caller: [],
   status: [],
+  lostStatus: [],
+  lostStatusFrom: "",
+  lostStatusTo: "",
+  lostStatusDate: "",
+  lostStatusDateTo: "",
   followup: "All",
   followupFrom: "",
   followupTo: "",
@@ -20,6 +25,8 @@ const DEFAULTS = {
   batch: "",
   statusFrom: "",
   statusTo: "",
+  statusDate: "",
+  statusDateTo: "",
   opdDate: "",
   opdDateTo: "",
   ipdDate: "",
@@ -32,7 +39,7 @@ const DEFAULTS = {
 };
 
 // All URL param keys owned by this hook — used to avoid overwriting analytics params
-const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'followup', 'followupFrom', 'followupTo', 'opd', 'ipd', 'diag', 'campaign', 'search', 'batch', 'statusFrom', 'statusTo', 'ops', 'cf', 'inc', 'opdDate', 'opdDateTo', 'ipdDate', 'ipdDateTo', 'diagBook', 'diagDate', 'diagDateTo', 'hasSurgery', 'diagCaseType'];
+const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'lostStatus', 'lostStatusFrom', 'lostStatusTo', 'lostStatusDate', 'lostStatusDateTo', 'followup', 'followupFrom', 'followupTo', 'opd', 'ipd', 'diag', 'campaign', 'search', 'batch', 'statusFrom', 'statusTo', 'statusDate', 'statusDateTo', 'ops', 'cf', 'inc', 'opdDate', 'opdDateTo', 'ipdDate', 'ipdDateTo', 'diagBook', 'diagDate', 'diagDateTo', 'hasSurgery', 'diagCaseType'];
 
 // Resolve legacy `view` param and special `date` values into concrete filter state
 function resolveInitialParams(searchParams) {
@@ -40,7 +47,7 @@ function resolveInitialParams(searchParams) {
   for (const key of Object.keys(DEFAULTS)) {
     const val = searchParams.get(key);
     if (val) {
-      if (key === 'campaign' || key === 'status' || key === 'caller') {
+      if (key === 'campaign' || key === 'status' || key === 'lostStatus' || key === 'caller') {
         raw[key] = val.split(',').filter(Boolean);
       } else {
         raw[key] = val;
@@ -113,6 +120,9 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
   const [leadStatus, setLeadStatus] = useState(
     Array.isArray(initialParams.status) ? initialParams.status : DEFAULTS.status
   );
+  const [lostStatus, setLostStatus] = useState(
+    Array.isArray(initialParams.lostStatus) ? initialParams.lostStatus : DEFAULTS.lostStatus
+  );
   const [followupFilter, setFollowupFilter] = useState(initialParams.followup || DEFAULTS.followup);
   const [followupFrom, setFollowupFrom] = useState(initialParams.followupFrom || DEFAULTS.followupFrom);
   const [followupTo, setFollowupTo] = useState(initialParams.followupTo || DEFAULTS.followupTo);
@@ -126,6 +136,12 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
   const [batch, setBatch] = useState(initialParams.batch || DEFAULTS.batch);
   const [statusFrom, setStatusFrom] = useState(initialParams.statusFrom || '');
   const [statusTo, setStatusTo] = useState(initialParams.statusTo || '');
+  const [lostStatusFrom, setLostStatusFrom] = useState(initialParams.lostStatusFrom || '');
+  const [lostStatusTo, setLostStatusTo] = useState(initialParams.lostStatusTo || '');
+  const [lostStatusDate, setLostStatusDate] = useState(initialParams.lostStatusDate || '');
+  const [lostStatusDateTo, setLostStatusDateTo] = useState(initialParams.lostStatusDateTo || '');
+  const [statusDate, setStatusDate] = useState(initialParams.statusDate || '');
+  const [statusDateTo, setStatusDateTo] = useState(initialParams.statusDateTo || '');
   const [opdDate, setOpdDate] = useState(initialParams.opdDate || '');
   const [opdDateTo, setOpdDateTo] = useState(initialParams.opdDateTo || '');
   const [ipdDate, setIpdDate] = useState(initialParams.ipdDate || '');
@@ -198,6 +214,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if (source !== DEFAULTS.source) params.source = source;
     if (callerFilter.length > 0) params.caller = callerFilter.join(',');
     if (leadStatus.length > 0) params.status = leadStatus.join(',');
+    if (lostStatus.length > 0) params.lostStatus = lostStatus.join(',');
     if (followupFilter !== DEFAULTS.followup) params.followup = followupFilter;
     if (followupFrom !== DEFAULTS.followupFrom) params.followupFrom = followupFrom;
     if (followupTo !== DEFAULTS.followupTo) params.followupTo = followupTo;
@@ -209,6 +226,12 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if (batch !== DEFAULTS.batch) params.batch = batch;
     if (statusFrom) params.statusFrom = statusFrom;
     if (statusTo) params.statusTo = statusTo;
+    if (statusDate) params.statusDate = statusDate;
+    if (statusDateTo) params.statusDateTo = statusDateTo;
+    if (lostStatusFrom) params.lostStatusFrom = lostStatusFrom;
+    if (lostStatusTo) params.lostStatusTo = lostStatusTo;
+    if (lostStatusDate) params.lostStatusDate = lostStatusDate;
+    if (lostStatusDateTo) params.lostStatusDateTo = lostStatusDateTo;
     if (opdDate) params.opdDate = opdDate;
     if (opdDateTo) params.opdDateTo = opdDateTo;
     if (ipdDate) params.ipdDate = ipdDate;
@@ -258,7 +281,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     followupFilter, followupFrom, followupTo, opdStatus, ipdStatus, diagnostics, campaignFilter, search,
     filterOperators, customFieldFilters, filterIncludeTexts, opdDate, opdDateTo, ipdDate, ipdDateTo,
     diagBookingStatus, diagDate, diagDateTo, hasSurgery, diagCaseType,
-    statusFrom, statusTo,
+    statusFrom, statusTo, statusDate, statusDateTo,
     setSearchParams, searchParams
   ]);
 
@@ -281,6 +304,9 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if (JSON.stringify(params.status || []) !== JSON.stringify(leadStatus)) {
       setLeadStatus(params.status || []);
     }
+    if (JSON.stringify(params.lostStatus || []) !== JSON.stringify(lostStatus)) {
+      setLostStatus(params.lostStatus || []);
+    }
     if ((params.followup || "All") !== followupFilter) setFollowupFilter(params.followup || "All");
     if ((params.followupFrom || "") !== followupFrom) setFollowupFrom(params.followupFrom || "");
     if ((params.followupTo || "") !== followupTo) setFollowupTo(params.followupTo || "");
@@ -289,8 +315,14 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if ((params.diag || "Diagnostics") !== diagnostics) setDiagnostics(params.diag || "Diagnostics");
     if ((params.search || "") !== search) setSearch(params.search || "");
     if ((params.batch || "") !== batch) setBatch(params.batch || "");
-    if ((params.statusFrom || "") !== statusFrom) setStatusFrom(params.statusFrom || "");
-    if ((params.statusTo || "") !== statusTo) setStatusTo(params.statusTo || "");
+    if ((statusFrom || "") !== statusFrom) setStatusFrom(params.statusFrom || "");
+    if ((statusTo || "") !== statusTo) setStatusTo(params.statusTo || "");
+    if ((params.statusDate || "") !== statusDate) setStatusDate(params.statusDate || "");
+    if ((params.statusDateTo || "") !== statusDateTo) setStatusDateTo(params.statusDateTo || "");
+    if ((params.lostStatusFrom || "") !== lostStatusFrom) setLostStatusFrom(params.lostStatusFrom || "");
+    if ((params.lostStatusTo || "") !== lostStatusTo) setLostStatusTo(params.lostStatusTo || "");
+    if ((params.lostStatusDate || "") !== lostStatusDate) setLostStatusDate(params.lostStatusDate || "");
+    if ((params.lostStatusDateTo || "") !== lostStatusDateTo) setLostStatusDateTo(params.lostStatusDateTo || "");
     if ((params.opdDate || "") !== opdDate) setOpdDate(params.opdDate || "");
     if ((params.opdDateTo || "") !== opdDateTo) setOpdDateTo(params.opdDateTo || "");
     if ((params.ipdDate || "") !== ipdDate) setIpdDate(params.ipdDate || "");
@@ -322,6 +354,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     source,
     callerFilter,
     leadStatus,
+    lostStatus,
     followupFilter,
     followupFrom,
     followupTo,
@@ -332,6 +365,12 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     batch,
     statusFrom,
     statusTo,
+    statusDate,
+    statusDateTo,
+    lostStatusFrom,
+    lostStatusTo,
+    lostStatusDate,
+    lostStatusDateTo,
     debouncedSearch,
     customFieldFilters,
     filterOperators,
@@ -346,10 +385,11 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     hasSurgery,
     diagCaseType,
   }), [
-    dateMode, customFrom, customTo, source, callerFilter, leadStatus,
+    dateMode, customFrom, customTo, source, callerFilter, leadStatus, lostStatus,
     followupFilter, followupFrom, followupTo, opdStatus, ipdStatus, diagnostics, campaignFilter, batch, statusFrom, statusTo, debouncedSearch,
     customFieldFilters, filterOperators, filterIncludeTexts, opdDate, opdDateTo, ipdDate, ipdDateTo,
     diagBookingStatus, diagDate, diagDateTo, hasSurgery, diagCaseType,
+    statusDate, statusDateTo,
   ]);
 
   // Options derived from filterMeta and configs (not from scanning all leads)
@@ -360,15 +400,26 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
 
   const leadStatusOptions = useMemo(() => {
     if (leadStages && leadStages.length > 0) {
-      return leadStages.map(stage => stage.displayLabel || stage.stageName);
+      return leadStages
+        .filter(s => s.stageCategory !== "lost")
+        .map(stage => stage.displayLabel || stage.stageName);
     }
     const statusField = fieldConfigs.find(f => f.fieldName === 'lead_status' || f.fieldName === 'status');
     if (statusField && statusField.options && statusField.options.length > 0) {
       return [...statusField.options];
     }
-    // Fallback to filterMeta statuses
+    // Fallback to filterMeta statuses (might contain lost ones if meta API doesn't separate)
     return [...(filterMeta?.statuses || [])];
   }, [fieldConfigs, leadStages, filterMeta?.statuses]);
+
+  const lostStatusOptions = useMemo(() => {
+    if (leadStages && leadStages.length > 0) {
+      return leadStages
+        .filter(s => s.stageCategory === "lost")
+        .map(stage => stage.displayLabel || stage.stageName);
+    }
+    return [];
+  }, [leadStages]);
 
   // OPD/IPD booking statuses — always hardcoded to match the bookingStatusEnum in the Lead model
   const opdOptions = useMemo(() => ["OPD Status", "Booked", "Done", "Cancelled"], []);
@@ -420,6 +471,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     setSource(DEFAULTS.source);
     setCallerFilter([]);
     setLeadStatus([]);
+    setLostStatus([]);
     setFollowupFilter(DEFAULTS.followup);
     setFollowupFrom(DEFAULTS.followupFrom);
     setFollowupTo(DEFAULTS.followupTo);
@@ -442,6 +494,8 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     setDiagCaseType('');
     setStatusFrom('');
     setStatusTo('');
+    setStatusDate('');
+    setStatusDateTo('');
   }, []);
 
   return {
@@ -453,6 +507,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     source, setSource,
     callerFilter, setCallerFilter,
     leadStatus, setLeadStatus,
+    lostStatus, setLostStatus,
     followupFilter, setFollowupFilter,
     followupFrom, setFollowupFrom,
     followupTo, setFollowupTo,
@@ -463,6 +518,12 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     batch, setBatch,
     statusFrom, setStatusFrom,
     statusTo, setStatusTo,
+    statusDate, setStatusDate,
+    statusDateTo, setStatusDateTo,
+    lostStatusFrom, setLostStatusFrom,
+    lostStatusTo, setLostStatusTo,
+    lostStatusDate, setLostStatusDate,
+    lostStatusDateTo, setLostStatusDateTo,
     search, setSearch,
     debouncedSearch,
     customFieldFilters, setCustomFieldFilter, removeCustomFieldFilter,
@@ -480,6 +541,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     // options
     sourceOptions,
     leadStatusOptions,
+    lostStatusOptions,
     opdOptions,
     ipdOptions,
     diagOptions,

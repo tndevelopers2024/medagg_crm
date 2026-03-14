@@ -67,6 +67,26 @@ const buildFilterQuery = async (filters = []) => {
                     andConditions.push({ status: { $regex: esc, $options: 'i' } });
                     break;
                 }
+                if (operator === 'between') {
+                    const { statusFrom, statusTo, statusDate, statusDateTo } = filter;
+                    try {
+                        const LeadActivity = require('../models/LeadActivity');
+                        const activityQuery = { action: 'lead_update' };
+                        const esc = (s) => (s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        if (statusFrom) activityQuery['diff.before.status'] = new RegExp(`^${esc(statusFrom)}$`, 'i');
+                        if (statusTo)   activityQuery['diff.after.status']  = new RegExp(`^${esc(statusTo)}$`,   'i');
+
+                        if (statusDate || statusDateTo) {
+                            activityQuery.createdAt = {};
+                            if (statusDate)   activityQuery.createdAt.$gte = new Date(`${statusDate}T00:00:00+05:30`);
+                            if (statusDateTo) activityQuery.createdAt.$lte = new Date(`${statusDateTo}T23:59:59.999+05:30`);
+                        }
+
+                        const leadIds = await LeadActivity.distinct('lead', activityQuery);
+                        andConditions.push({ _id: { $in: leadIds } });
+                    } catch (e) { /* ignore lookups */ }
+                    break;
+                }
                 const statusList = values || (value ? value.split(',').filter(Boolean) : []);
                 if (statusList.length === 0) break;
                 if (operator === 'is_not') {
@@ -77,6 +97,16 @@ const buildFilterQuery = async (filters = []) => {
                 break;
             }
 
+            case "lostStatus": {
+                const list = values || (value ? value.split(',').filter(Boolean) : []);
+                if (list.length === 0) break;
+                if (operator === 'is_not') {
+                    andConditions.push({ status: { $nin: list } });
+                } else {
+                    andConditions.push({ status: { $in: list } });
+                }
+                break;
+            }
             case "followUp": {
                 const now = new Date();
                 if (operator === 'is_empty') {
@@ -417,8 +447,20 @@ exports.getLeadAnalytics = async (req, res) => {
  * Get status distribution
  */
 const getStatusDistribution = async (query) => {
+    // Exclude lost stages from main status distribution
+    const lostStages = await LeadStageConfig.find({ stageCategory: "lost", isActive: { $ne: false } }).select("displayLabel");
+    const lostDisplayLabels = lostStages.map(s => s.displayLabel).filter(Boolean);
+    
+    // Explicitly add 'Lost' to the exclude list just in case
+    const excludeLabels = [...new Set([...lostDisplayLabels, "Lost", "lost"])];
+
     const results = await Lead.aggregate([
-        { $match: query },
+        { 
+            $match: { 
+                ...query,
+                status: { $nin: excludeLabels }
+            } 
+        },
         {
             $group: {
                 _id: "$status",

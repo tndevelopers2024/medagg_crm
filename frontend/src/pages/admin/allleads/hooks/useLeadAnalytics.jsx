@@ -26,6 +26,7 @@ export const CHART_TYPES = [
 
 export default function useLeadAnalytics({
   leadStatus,
+  lostStatus,
   callerFilter,
   source,
   opdStatus,
@@ -45,6 +46,10 @@ export default function useLeadAnalytics({
   opdDateTo,
   ipdDate,
   ipdDateTo,
+  statusFrom,
+  statusTo,
+  statusDate,
+  statusDateTo,
   fieldConfigs,
   notify,
 }) {
@@ -116,8 +121,25 @@ export default function useLeadAnalytics({
       af.push({ id: "page_status", type: "leadStatus", operator: "is_empty" });
     } else if (ops.status === 'is_include' && inc.status) {
       af.push({ id: "page_status", type: "leadStatus", operator: "is_include", value: inc.status });
+    } else if (ops.status === 'between' && (statusFrom || statusTo)) {
+      af.push({
+        id: "page_status",
+        type: "leadStatus",
+        operator: "between",
+        statusFrom,
+        statusTo,
+        statusDate,
+        statusDateTo
+      });
     } else if (Array.isArray(leadStatus) && leadStatus.length > 0) {
       af.push({ id: "page_status", type: "leadStatus", operator: ops.status || "is", values: leadStatus });
+    }
+
+    // Lost Status
+    if (ops.lostStatus === 'is_empty') {
+      af.push({ id: "page_lostStatus", type: "lostStatus", operator: "is_empty" });
+    } else if (Array.isArray(lostStatus) && lostStatus.length > 0) {
+      af.push({ id: "page_lostStatus", type: "lostStatus", operator: ops.lostStatus || "is", values: lostStatus });
     }
 
     // Assignee
@@ -234,10 +256,11 @@ export default function useLeadAnalytics({
 
     return af;
   }, [
-    chartDrillFilters, leadStatus, callerFilter, source, opdStatus, ipdStatus, diagnostics, campaignFilter,
+    chartDrillFilters, leadStatus, lostStatus, callerFilter, source, opdStatus, ipdStatus, diagnostics, campaignFilter,
     dateMode, customFrom, customTo, followupFilter, followupFrom, followupTo,
     customFieldFilters, filterOperators, filterIncludeTexts,
     opdDate, opdDateTo, ipdDate, ipdDateTo,
+    statusFrom, statusTo, statusDate, statusDateTo,
   ]);
 
   const loadChartData = useCallback(async () => {

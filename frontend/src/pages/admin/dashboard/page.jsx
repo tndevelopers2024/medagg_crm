@@ -345,6 +345,11 @@ export default function Dashboard() {
                   const tStr = t.toISOString().slice(0, 10);
                   return { opdDate: tStr, opdStatus: 'Booked' };
                 })(),
+                tomorrowIpBooked: (() => {
+                  const t = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000);
+                  const tStr = t.toISOString().slice(0, 10);
+                  return { ipdDate: tStr, ipdStatus: 'Booked' };
+                })(),
                 // OP/IP/Diag cards use booking date (not lead creation date)
                 opBooked:            { ...opdDateFilter, opdStatus: 'Booked' },
                 opDone:              { ...opdDateFilter, opdStatus: 'Done' },

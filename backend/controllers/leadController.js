@@ -22,13 +22,13 @@ const isValidPhone = (raw) => {
 const buildLeadFilter = async (query) => {
   const filter = {};
   const {
-    status, statusFrom, statusTo, assignedTo, source, campaignId, batch,
+    status, lostStatus, statusFrom, statusTo, statusDate, statusDateTo, assignedTo, source, campaignId, batch,
     dateMode, from, to, followup, followupFrom, followupTo, q,
     callStatus, callCountFrom, callCountTo,
     opdStatus, ipdStatus, diagnostics,
     opdDate, opdDateTo, ipdDate, ipdDateTo, opdDateOp, ipdDateOp,
     diagDate, diagDateTo, diagDateOp,
-    statusOp, sourceOp, assignedToOp, campaignOp,
+    statusOp, lostStatusOp, sourceOp, assignedToOp, campaignOp,
     followupOp, opdStatusOp, ipdStatusOp, diagnosticsOp,
   } = query;
 
@@ -44,37 +44,84 @@ const buildLeadFilter = async (query) => {
     try {
       const LeadActivity = require('../models/LeadActivity');
       const activityQuery = { action: 'lead_update' };
-      const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const esc = (s) => (s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       if (statusFrom) activityQuery['diff.before.status'] = new RegExp(`^${esc(statusFrom)}$`, 'i');
       if (statusTo)   activityQuery['diff.after.status']  = new RegExp(`^${esc(statusTo)}$`,   'i');
+      
+      if (statusDate || statusDateTo) {
+        activityQuery.createdAt = {};
+        if (statusDate)   activityQuery.createdAt.$gte = new Date(`${statusDate}T00:00:00+05:30`);
+        if (statusDateTo) activityQuery.createdAt.$lte = new Date(`${statusDateTo}T23:59:59+05:30`);
+      }
+
+      const leadIds = await LeadActivity.distinct('lead', activityQuery);
+      filter._id = { $in: leadIds };
+    } catch (e) { /* ignore lookup errors */ }
+  } else if (lostStatusOp === 'between' && (lostStatusFrom || lostStatusTo)) {
+    // Find leads that had a lost status transition from lostStatusFrom → lostStatusTo via LeadActivity
+    try {
+      const LeadActivity = require('../models/LeadActivity');
+      const activityQuery = { action: 'lead_update' };
+      const esc = (s) => (s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (lostStatusFrom) activityQuery['diff.before.status'] = new RegExp(`^${esc(lostStatusFrom)}$`, 'i');
+      if (lostStatusTo)   activityQuery['diff.after.status']  = new RegExp(`^${esc(lostStatusTo)}$`,   'i');
+      
+      if (lostStatusDate || lostStatusDateTo) {
+        activityQuery.createdAt = {};
+        if (lostStatusDate)   activityQuery.createdAt.$gte = new Date(`${lostStatusDate}T00:00:00+05:30`);
+        if (lostStatusDateTo) activityQuery.createdAt.$lte = new Date(`${lostStatusDateTo}T23:59:59+05:30`);
+      }
+
       const leadIds = await LeadActivity.distinct('lead', activityQuery);
       filter._id = { $in: leadIds };
     } catch (e) { /* ignore lookup errors */ }
   } else if (statusOp === 'is_include' && status) {
     filter.$and = filter.$and || [];
     filter.$and.push({ status: { $regex: status, $options: 'i' } });
-  } else if (status) {
-    let statusValues = status.includes(',') ? status.split(',').filter(Boolean) : [status];
+  } else if (lostStatusOp === 'is_include' && lostStatus) {
+    filter.$and = filter.$and || [];
+    filter.$and.push({ status: { $regex: lostStatus, $options: 'i' } });
+  } else if (status || lostStatus) {
+    let posStatusList = [];
+    let negStatusList = [];
 
-    // Map stageName values (e.g. "new") to displayLabel (e.g. "New Lead")
-    // so old URLs and bookmarks still work
-    try {
-      const stages = await LeadStageConfig.find().select('stageName displayLabel').lean();
-      const stageMap = new Map();
-      stages.forEach(s => {
-        stageMap.set((s.stageName || '').toLowerCase(), s.displayLabel || s.stageName);
-      });
-      statusValues = statusValues.map(v => {
-        const mapped = stageMap.get(v.toLowerCase());
-        return mapped || v;
-      });
-    } catch (e) { /* ignore lookup errors, use raw values */ }
+    if (status) {
+      const list = status.split(',').filter(Boolean);
+      if (statusOp === 'is_not') negStatusList.push(...list);
+      else posStatusList.push(...list);
+    }
+    if (lostStatus) {
+      const list = lostStatus.split(',').filter(Boolean);
+      if (lostStatusOp === 'is_not') negStatusList.push(...list);
+      else posStatusList.push(...list);
+    }
 
-    const regexes = statusValues.map(s => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'));
-    if (statusOp === 'is_not') {
-      filter.status = { $nin: regexes };
-    } else {
-      filter.status = regexes.length === 1 ? { $regex: regexes[0] } : { $in: regexes };
+    // Map stageNames to displayLabels
+    const mapStages = async (list) => {
+      try {
+        const stages = await LeadStageConfig.find().select('stageName displayLabel').lean();
+        const stageMap = new Map();
+        stages.forEach(s => {
+          stageMap.set((s.stageName || '').toLowerCase(), s.displayLabel || s.stageName);
+        });
+        return list.map(v => stageMap.get(v.toLowerCase()) || v);
+      } catch (e) { return list; }
+    };
+
+    const finalPos = await mapStages(posStatusList);
+    const finalNeg = await mapStages(negStatusList);
+
+    if (finalPos.length > 0 || finalNeg.length > 0) {
+      filter.status = {};
+      if (finalPos.length > 0) {
+        const regexes = finalPos.map(s => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'));
+        filter.status.$in = regexes;
+      }
+      if (finalNeg.length > 0) {
+        const regexes = finalNeg.map(s => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'));
+        filter.status.$nin = regexes;
+      }
+      // If only one regex and no $nin, can simplify if desired, but {} works
     }
   }
 
@@ -2466,6 +2513,7 @@ const getAdminDashboardV2 = async (req, res) => {
       diagnosticSuggestedAgg,
       diagnosticBookedAgg,
       diagnosticDoneAgg,
+      tomorrowIpBookedAgg,
     ] = await Promise.all([
       Lead.countDocuments({ createdTime: dateFilter, ...leadMatch }),
       Lead.countDocuments({ createdTime: dateFilter, assignedTo: null, ...leadMatch }),
@@ -2573,6 +2621,13 @@ const getAdminDashboardV2 = async (req, res) => {
         { $group: { _id: "$_id" } },
         { $count: "c" },
       ]),
+      Lead.aggregate([
+        { $match: leadMatch },
+        { $unwind: "$ipBookings" },
+        { $match: { "ipBookings.status": "booked", "ipBookings.date": { $gte: tomorrowStart, $lte: tomorrowEnd } } },
+        { $group: { _id: "$_id" } },
+        { $count: "c" },
+      ]),
     ]);
 
     const kpiCards = {
@@ -2588,6 +2643,7 @@ const getAdminDashboardV2 = async (req, res) => {
       diagnosticSuggested: diagnosticSuggestedAgg[0]?.c || 0,
       diagnosticBooked: diagnosticBookedAgg[0]?.c || 0,
       diagnosticDone: diagnosticDoneAgg[0]?.c || 0,
+      tomorrowIpBooked: tomorrowIpBookedAgg[0]?.c || 0,
     };
 
     // ---- City & Doctor Summary ----
