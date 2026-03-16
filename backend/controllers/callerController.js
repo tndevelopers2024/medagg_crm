@@ -998,14 +998,18 @@ const getDashboardStats = async (req, res) => {
 
     let lastCallAgoMin = null;
     let firstCallAgoMin = null;
+    let firstCallAt = null;
+    let lastCallAt = null;
     let idleMin = 0;
 
     if (firstCallLog) {
       firstCallAgoMin = Math.max(0, Math.round((now.getTime() - firstCallLog.createdAt.getTime()) / 60000));
+      firstCallAt = firstCallLog.createdAt.toISOString();
     }
 
     if (lastCallLog) {
       lastCallAgoMin = Math.max(0, Math.round((now.getTime() - lastCallLog.createdAt.getTime()) / 60000));
+      lastCallAt = lastCallLog.createdAt.toISOString();
     }
 
     if (lastCallToday) {
@@ -1020,6 +1024,8 @@ const getDashboardStats = async (req, res) => {
       idleMin,
       firstCallAgoMin,
       lastCallAgoMin,
+      firstCallAt,
+      lastCallAt,
       tasksTodayCount,
       tasksTomorrowCount,
       pendingTasksCount,

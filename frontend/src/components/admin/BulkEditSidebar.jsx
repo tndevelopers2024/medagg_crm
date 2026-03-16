@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { Dialog, Transition, Listbox } from "@headlessui/react";
 import { XMarkIcon, PlusIcon, UserIcon, Square2StackIcon, TrashIcon, ChevronUpDownIcon, CheckIcon, BoltIcon, UsersIcon } from "@heroicons/react/24/outline";
-import { Select as AntSelect, InputNumber, Segmented, Tooltip, Button } from "antd";
+import { Select as AntSelect, InputNumber, Segmented, Tooltip, Button, DatePicker } from "antd";
+import dayjs from "dayjs";
 import { DeleteOutlined } from "@ant-design/icons";
 
 // Internal reusable Select component
@@ -421,6 +422,7 @@ const BulkEditSidebar = ({ open, onClose, selectedCount, callers = [], onUpdate,
                                                     {fieldUpdates.map((field) => {
                                                         const fieldConfig = getFieldConfig(field.name);
                                                         const hasOptions = fieldConfig && fieldConfig.options && fieldConfig.options.length > 0;
+                                                        const isDateField = fieldConfig?.fieldType === "date";
 
                                                         // Prepare options for value dropdown if applicable
                                                         const valueOptions = hasOptions ? [
@@ -473,7 +475,16 @@ const BulkEditSidebar = ({ open, onClose, selectedCount, callers = [], onUpdate,
                                                                     <div>
                                                                         <label className="text-xs font-medium text-gray-500 mb-1 block">Value</label>
                                                                         {field.operation === 'replace' ? (
-                                                                            hasOptions ? (
+                                                                            isDateField ? (
+                                                                                <DatePicker
+                                                                                    style={{ width: "100%", marginTop: 4 }}
+                                                                                    value={field.value ? dayjs(field.value) : null}
+                                                                                    onChange={(date) => updateFieldRow(field.id, 'value', date ? date.toISOString() : "")}
+                                                                                    format="DD/MM/YYYY"
+                                                                                    placeholder="Select date..."
+                                                                                    allowClear
+                                                                                />
+                                                                            ) : hasOptions ? (
                                                                                 <Select
                                                                                     value={field.value}
                                                                                     onChange={(val) => updateFieldRow(field.id, 'value', val)}

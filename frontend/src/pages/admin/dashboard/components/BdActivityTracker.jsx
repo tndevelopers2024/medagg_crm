@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import SectionHeader from "./SectionHeader";
 import ChartPanel from "./ChartPanel";
 import { downloadFlatCSV } from "./csvExport";
-import { buildDashboardCellUrl } from "../../../../utils/leadsNavigation";
+import { buildDashboardCellUrl, buildCalledInPeriodFilter, buildLeadsUrl } from "../../../../utils/leadsNavigation";
 
 const CSV_COLUMNS = [
   { key: "callerName", label: "BD Name" },
@@ -23,6 +23,13 @@ const CSV_COLUMNS = [
 export default function BdActivityTracker({ data = [], datePreset = "today", customRange = {} }) {
   const navigate = useNavigate();
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // Navigate to leads using CallLog lookup — same data source as uniqueDials computation.
+  // calledBy + calledFrom/calledTo tells the backend to run CallLog.distinct('lead', ...)
+  const goToCalledLeads = (callerId) => {
+    const calledFilter = buildCalledInPeriodFilter(callerId, datePreset, customRange);
+    navigate(buildLeadsUrl(calledFilter));
+  };
   const [filterValue, setFilterValue] = useState("");
   const [chartOpen, setChartOpen] = useState(false);
   const filtered = useMemo(() => {
@@ -41,7 +48,7 @@ export default function BdActivityTracker({ data = [], datePreset = "today", cus
       render: (name, record) => (
         <Space
           className="cursor-pointer"
-          onClick={() => navigate(buildDashboardCellUrl({ callerFilter: [String(record.callerId)] }, "totalLeads", datePreset, customRange))}
+          onClick={() => goToCalledLeads(record.callerId)}
         >
           <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-pink-100">
             <FiHeadphones className="text-sm text-pink-600" />
@@ -57,7 +64,7 @@ export default function BdActivityTracker({ data = [], datePreset = "today", cus
       render: (val, record) => (
         <span
           className="cursor-pointer hover:text-[#322554] hover:underline transition-colors"
-          onClick={() => navigate(buildDashboardCellUrl({ callerFilter: [String(record.callerId)] }, "totalLeads", datePreset, customRange))}
+          onClick={() => goToCalledLeads(record.callerId)}
         >
           {val ?? 0}
         </span>
@@ -71,7 +78,7 @@ export default function BdActivityTracker({ data = [], datePreset = "today", cus
         <Tag
           color="blue"
           className="cursor-pointer"
-          onClick={() => navigate(buildDashboardCellUrl({ callerFilter: [String(record.callerId)] }, "totalLeads", datePreset, customRange))}
+          onClick={() => goToCalledLeads(record.callerId)}
         >
           {val ?? 0}
         </Tag>
@@ -84,7 +91,7 @@ export default function BdActivityTracker({ data = [], datePreset = "today", cus
       render: (val, record) => (
         <span
           className="cursor-pointer hover:text-[#322554] hover:underline transition-colors"
-          onClick={() => navigate(buildDashboardCellUrl({ callerFilter: [String(record.callerId)] }, "totalLeads", datePreset, customRange))}
+          onClick={() => goToCalledLeads(record.callerId)}
         >
           {val ?? 0}
         </span>

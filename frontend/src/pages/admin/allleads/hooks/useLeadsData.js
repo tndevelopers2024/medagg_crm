@@ -148,10 +148,31 @@ export function buildQueryParams(filters, page, pageSize) {
   if (filters.hasSurgery) params.hasSurgery = filters.hasSurgery;
   if (filters.diagCaseType) params.diagCaseType = filters.diagCaseType;
 
+  // Called-in-period filter — BD tracker drill-through
+  if (filters.calledBy) params.calledBy = filters.calledBy;
+  if (filters.calledFrom) params.calledFrom = filters.calledFrom;
+  if (filters.calledTo) params.calledTo = filters.calledTo;
+
   // Custom field filters — sent as field__<fieldName>=<value> and fieldOp__<fieldName>=<operator>
+  // Date-type fields use fieldDatePreset__<fieldName>=<preset> instead
   if (filters.customFieldFilters) {
-    for (const [fieldName, { value, operator }] of Object.entries(filters.customFieldFilters)) {
-      if (value || operator === 'is_empty') {
+    for (const [fieldName, cfEntry] of Object.entries(filters.customFieldFilters)) {
+      const { value, operator, from, to } = cfEntry;
+      const fieldCfg = fieldConfigs.find(fc => fc.fieldName === fieldName);
+      const isDateField = fieldCfg?.fieldType === 'date';
+
+      if (isDateField && value && value !== 'All') {
+        if (operator === 'is_empty') {
+          params[`field__${fieldName}`] = '__is_empty__';
+          params[`fieldOp__${fieldName}`] = 'is_empty';
+        } else {
+          params[`fieldDatePreset__${fieldName}`] = value;
+          if (value === 'Custom') {
+            if (from) params[`fieldDateFrom__${fieldName}`] = from;
+            if (to) params[`fieldDateTo__${fieldName}`] = to;
+          }
+        }
+      } else if (value || operator === 'is_empty') {
         params[`field__${fieldName}`] = operator === 'is_empty' ? '__is_empty__' : value;
         if (operator && operator !== 'is') {
           params[`fieldOp__${fieldName}`] = operator;

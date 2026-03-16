@@ -455,6 +455,9 @@ export default function LeadsManagement() {
           diagStatusOptions={['Diagnostics Status', 'Booked', 'Done', 'Cancelled']}
           diagDate={filters.diagDate} setDiagDate={filters.setDiagDate}
           diagDateTo={filters.diagDateTo} setDiagDateTo={filters.setDiagDateTo}
+          calledBy={filters.calledBy} calledFrom={filters.calledFrom} calledTo={filters.calledTo}
+          setCalledBy={filters.setCalledBy} setCalledFrom={filters.setCalledFrom} setCalledTo={filters.setCalledTo}
+          callers={callers}
         />
       </section>
 

@@ -36,10 +36,13 @@ const DEFAULTS = {
   diagDateTo: "",
   hasSurgery: "",   // "1" when filtering by opBookings.surgery exists
   diagCaseType: "", // "1" when filtering by caseType=diagnostic
+  calledBy: "",     // caller ID — from BD tracker drill-through
+  calledFrom: "",   // date range start for called-in-period
+  calledTo: "",     // date range end for called-in-period
 };
 
 // All URL param keys owned by this hook — used to avoid overwriting analytics params
-const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'lostStatus', 'lostStatusFrom', 'lostStatusTo', 'lostStatusDate', 'lostStatusDateTo', 'followup', 'followupFrom', 'followupTo', 'opd', 'ipd', 'diag', 'campaign', 'search', 'batch', 'statusFrom', 'statusTo', 'statusDate', 'statusDateTo', 'ops', 'cf', 'inc', 'opdDate', 'opdDateTo', 'ipdDate', 'ipdDateTo', 'diagBook', 'diagDate', 'diagDateTo', 'hasSurgery', 'diagCaseType'];
+const FILTER_PARAM_KEYS = ['date', 'from', 'to', 'source', 'caller', 'status', 'lostStatus', 'lostStatusFrom', 'lostStatusTo', 'lostStatusDate', 'lostStatusDateTo', 'followup', 'followupFrom', 'followupTo', 'opd', 'ipd', 'diag', 'campaign', 'search', 'batch', 'statusFrom', 'statusTo', 'statusDate', 'statusDateTo', 'ops', 'cf', 'inc', 'opdDate', 'opdDateTo', 'ipdDate', 'ipdDateTo', 'diagBook', 'diagDate', 'diagDateTo', 'hasSurgery', 'diagCaseType', 'calledBy', 'calledFrom', 'calledTo'];
 
 // Resolve legacy `view` param and special `date` values into concrete filter state
 function resolveInitialParams(searchParams) {
@@ -54,6 +57,14 @@ function resolveInitialParams(searchParams) {
       }
     }
   }
+
+  // calledBy/calledFrom/calledTo are not in DEFAULTS keys loop — read explicitly
+  const calledByVal = searchParams.get('calledBy');
+  const calledFromVal = searchParams.get('calledFrom');
+  const calledToVal = searchParams.get('calledTo');
+  if (calledByVal) raw.calledBy = calledByVal;
+  if (calledFromVal) raw.calledFrom = calledFromVal;
+  if (calledToVal) raw.calledTo = calledToVal;
 
   // Parse filter operators (e.g. ops=status:is_not,caller:is)
   const opsParam = searchParams.get('ops');
@@ -151,6 +162,9 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
   const [diagDateTo, setDiagDateTo] = useState(initialParams.diagDateTo || '');
   const [hasSurgery, setHasSurgery] = useState(initialParams.hasSurgery || '');
   const [diagCaseType, setDiagCaseType] = useState(initialParams.diagCaseType || '');
+  const [calledBy, setCalledBy] = useState(initialParams.calledBy || '');
+  const [calledFrom, setCalledFrom] = useState(initialParams.calledFrom || '');
+  const [calledTo, setCalledTo] = useState(initialParams.calledTo || '');
 
   // Filter operators — { filterKey: 'is' | 'is_not' | 'is_empty' | 'is_include' }
   const [filterOperators, setFilterOperators] = useState(initialParams.ops || {});
@@ -178,8 +192,11 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
   // Custom field filters — { fieldName: { value, operator } }
   const [customFieldFilters, setCustomFieldFilters] = useState(initialParams.cf || {});
 
-  const setCustomFieldFilter = useCallback((fieldName, value, operator = 'is') => {
-    setCustomFieldFilters(prev => ({ ...prev, [fieldName]: { value, operator } }));
+  const setCustomFieldFilter = useCallback((fieldName, value, operator = 'is', from = null, to = null) => {
+    setCustomFieldFilters(prev => ({
+      ...prev,
+      [fieldName]: { value, operator, ...(from ? { from } : {}), ...(to ? { to } : {}) }
+    }));
   }, []);
 
   const removeCustomFieldFilter = useCallback((fieldName) => {
@@ -241,6 +258,9 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if (diagDateTo) params.diagDateTo = diagDateTo;
     if (hasSurgery) params.hasSurgery = hasSurgery;
     if (diagCaseType) params.diagCaseType = diagCaseType;
+    if (calledBy) params.calledBy = calledBy;
+    if (calledFrom) params.calledFrom = calledFrom;
+    if (calledTo) params.calledTo = calledTo;
 
     // filterOperators — only include non-default ('is') entries
     const nonDefaultOps = Object.entries(filterOperators).filter(([, v]) => v && v !== 'is');
@@ -282,6 +302,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     filterOperators, customFieldFilters, filterIncludeTexts, opdDate, opdDateTo, ipdDate, ipdDateTo,
     diagBookingStatus, diagDate, diagDateTo, hasSurgery, diagCaseType,
     statusFrom, statusTo, statusDate, statusDateTo,
+    calledBy, calledFrom, calledTo,
     setSearchParams, searchParams
   ]);
 
@@ -332,6 +353,9 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     if ((params.diagDateTo || "") !== diagDateTo) setDiagDateTo(params.diagDateTo || "");
     if ((params.hasSurgery || "") !== hasSurgery) setHasSurgery(params.hasSurgery || "");
     if ((params.diagCaseType || "") !== diagCaseType) setDiagCaseType(params.diagCaseType || "");
+    if ((params.calledBy || "") !== calledBy) setCalledBy(params.calledBy || "");
+    if ((params.calledFrom || "") !== calledFrom) setCalledFrom(params.calledFrom || "");
+    if ((params.calledTo || "") !== calledTo) setCalledTo(params.calledTo || "");
 
     // filterOperators
     const newOps = params.ops || {};
@@ -384,12 +408,15 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     diagDateTo,
     hasSurgery,
     diagCaseType,
+    calledBy,
+    calledFrom,
+    calledTo,
   }), [
     dateMode, customFrom, customTo, source, callerFilter, leadStatus, lostStatus,
     followupFilter, followupFrom, followupTo, opdStatus, ipdStatus, diagnostics, campaignFilter, batch, statusFrom, statusTo, debouncedSearch,
     customFieldFilters, filterOperators, filterIncludeTexts, opdDate, opdDateTo, ipdDate, ipdDateTo,
     diagBookingStatus, diagDate, diagDateTo, hasSurgery, diagCaseType,
-    statusDate, statusDateTo,
+    statusDate, statusDateTo, calledBy, calledFrom, calledTo,
   ]);
 
   // Options derived from filterMeta and configs (not from scanning all leads)
@@ -455,6 +482,7 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     { label: "Tomorrow", value: "Tomorrow" },
     { label: "This Week", value: "This Week" },
     { label: "Overdue", value: "Overdue" },
+    { label: "Till Now", value: "Till Now" },
     { label: "Not Scheduled", value: "Not Scheduled" },
     { label: "Custom", value: "Custom" },
     { label: "All", value: "All" },
@@ -496,6 +524,9 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     setStatusTo('');
     setStatusDate('');
     setStatusDateTo('');
+    setCalledBy('');
+    setCalledFrom('');
+    setCalledTo('');
   }, []);
 
   return {
@@ -538,6 +569,9 @@ export default function useLeadFilters({ leadStages, fieldConfigs, campaigns, ca
     diagDateTo, setDiagDateTo,
     hasSurgery, setHasSurgery,
     diagCaseType, setDiagCaseType,
+    calledBy, setCalledBy,
+    calledFrom, setCalledFrom,
+    calledTo, setCalledTo,
     // options
     sourceOptions,
     leadStatusOptions,

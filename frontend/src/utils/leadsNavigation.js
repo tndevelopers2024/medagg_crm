@@ -61,6 +61,11 @@ export function buildLeadsUrl(filter = {}) {
   set('search', filter.search);
   set('batch', filter.batch);
 
+  // Called-in-period filter — for BD tracker drill-through (shows leads actually called in period)
+  set('calledBy', filter.calledBy);
+  set('calledFrom', filter.calledFrom);
+  set('calledTo', filter.calledTo);
+
   // Filter operators (e.g. { opdDate: 'custom', ipdDate: 'custom' })
   if (filter.filterOperators && typeof filter.filterOperators === 'object') {
     const nonDefault = Object.entries(filter.filterOperators)
@@ -180,6 +185,18 @@ export function dashboardPresetToDateFilter(preset, customRange = {}) {
 }
 
 /**
+ * Build a called-in-period filter for BD Activity Tracker drill-through.
+ * Uses CallLog-based lookup on the backend (same data source as uniqueDials).
+ * @param {string} callerId — caller user ID
+ * @param {string} preset   — dashboard date preset
+ * @param {object} customRange — { from, to } for 'custom' preset
+ */
+export function buildCalledInPeriodFilter(callerId, preset, customRange = {}) {
+  const { from, to } = presetToRange(preset, customRange);
+  return { calledBy: String(callerId), calledFrom: from, calledTo: to };
+}
+
+/**
  * Caller dashboard helpers — convert caller date range values to allleads filter params.
  * Usage:
  *   navigate(buildLeadsUrl({ ...callerRangeToLeadsFilter(dateRange, customFrom, customTo), status: ['New Lead'] }))
@@ -188,6 +205,11 @@ export function dashboardPresetToDateFilter(preset, customRange = {}) {
 export function callerRangeToLeadsFilter(dateRange, customFrom, customTo) {
   const preset = CALLER_TO_PRESET[dateRange] || 'today';
   return dashboardPresetToDateFilter(preset, { from: customFrom || '', to: customTo || '' });
+}
+
+export function callerRangeToCalledFilter(callerId, dateRange, customFrom, customTo) {
+  const preset = CALLER_TO_PRESET[dateRange] || 'today';
+  return buildCalledInPeriodFilter(String(callerId), preset, { from: customFrom || '', to: customTo || '' });
 }
 
 export function callerRangeToBookingDateFilter(dateRange, customFrom, customTo, type = 'opd') {

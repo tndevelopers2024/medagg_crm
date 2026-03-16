@@ -41,6 +41,23 @@ const DATE_OPTIONS = [
     { label: "Custom", value: "Custom" },
 ];
 
+const DATE_PRESET_OPTIONS = [
+    { label: "Scheduled", value: "Scheduled" },
+    { label: "Today", value: "Today" },
+    { label: "Tomorrow", value: "Tomorrow" },
+    { label: "This Week", value: "This Week" },
+    { label: "Overdue", value: "Overdue" },
+    { label: "Till Now", value: "Till Now" },
+    { label: "Not Scheduled", value: "Not Scheduled" },
+    { label: "Custom", value: "Custom" },
+    { label: "All", value: "All" },
+];
+
+const DATE_FIELD_OPERATOR_OPTIONS = [
+    { label: "IS", value: "is" },
+    { label: "IS EMPTY", value: "is_empty" },
+];
+
 const OPERATOR_OPTIONS = [
     { label: "IS", value: "is" },
     { label: "IS NOT", value: "is_not" },
@@ -165,6 +182,9 @@ const LeadFilters = ({
     diagStatus, setDiagStatus, diagStatusOptions,
     diagDate, setDiagDate,
     diagDateTo, setDiagDateTo,
+    calledBy, calledFrom, calledTo,
+    setCalledBy, setCalledFrom, setCalledTo,
+    callers = [],
 }) => {
     const allFilters = useMemo(() => {
         const standard = Object.values(STANDARD_CONFIG);
@@ -937,9 +957,59 @@ const LeadFilters = ({
                     const config = allFilters.find(f => f.id === filterId);
                     if (!config) return null;
                     const fieldName = config.fieldName || filterId;
-                    const currentValue = customFieldFilters[fieldName]?.value || undefined;
-                    const currentOp = customFieldFilters[fieldName]?.operator || operators[filterId] || 'is';
+                    const cfEntry = customFieldFilters[fieldName] || {};
+                    const currentValue = cfEntry.value || undefined;
+                    const currentOp = cfEntry.operator || operators[filterId] || 'is';
                     const hasOptions = config.options && config.options.length > 0;
+                    const isDateField = config.type === 'date';
+
+                    if (isDateField) {
+                        const presetValue = currentValue || 'All';
+                        return (
+                            <ConditionPill
+                                key={filterId}
+                                label={config.label}
+                                operator={currentOp}
+                                onOperatorChange={(op) => {
+                                    onOperatorChange?.(filterId, op);
+                                    if (onCustomFieldFilter) {
+                                        if (op === 'is_empty') {
+                                            onCustomFieldFilter(fieldName, '', op);
+                                        } else {
+                                            onCustomFieldFilter(fieldName, presetValue, 'is');
+                                        }
+                                    }
+                                }}
+                                onRemove={() => removeFilter(filterId)}
+                                operatorOptions={DATE_FIELD_OPERATOR_OPTIONS}
+                            >
+                                <ValueSelect
+                                    value={presetValue}
+                                    onChange={(val) => onCustomFieldFilter && onCustomFieldFilter(fieldName, val, 'is')}
+                                    options={DATE_PRESET_OPTIONS}
+                                />
+                                {presetValue === 'Custom' && (
+                                    <DatePicker.RangePicker
+                                        size="small"
+                                        value={[
+                                            cfEntry.from ? dayjs(cfEntry.from) : null,
+                                            cfEntry.to ? dayjs(cfEntry.to) : null,
+                                        ]}
+                                        onChange={(dates) => {
+                                            if (onCustomFieldFilter) {
+                                                const from = dates?.[0]?.format('YYYY-MM-DD') || null;
+                                                const to = dates?.[1]?.format('YYYY-MM-DD') || null;
+                                                onCustomFieldFilter(fieldName, 'Custom', 'is', from, to);
+                                            }
+                                        }}
+                                        format="DD/MM/YYYY"
+                                        variant="borderless"
+                                        style={{ width: 220 }}
+                                    />
+                                )}
+                            </ConditionPill>
+                        );
+                    }
 
                     return (
                         <ConditionPill
@@ -1027,6 +1097,30 @@ const LeadFilters = ({
                         Clear chart filters
                     </Button>
                 )}
+
+                {/* Called-in-period filter pill — from BD Activity Tracker drill-through */}
+                {calledBy && (() => {
+                    const callerObj = callers.find(c => String(c.id) === String(calledBy) || String(c._id) === String(calledBy));
+                    const callerName = callerObj?.name || callerObj?.username || 'BD';
+                    const fmtDate = (s) => s ? dayjs(s).format('MMM D') : '';
+                    const dateLabel = calledFrom === calledTo
+                        ? fmtDate(calledFrom)
+                        : `${fmtDate(calledFrom)} – ${fmtDate(calledTo)}`;
+                    return (
+                        <div className="group flex items-center bg-violet-50 rounded-lg border border-violet-100 p-1 pr-2 transition-all hover:border-violet-200 hover:shadow-sm">
+                            <div className="flex items-center gap-1 px-2 border-r border-violet-200/50 mr-2">
+                                <span className="text-xs font-semibold text-violet-700 uppercase tracking-wide">Called By</span>
+                            </div>
+                            <span className="text-sm px-1 text-gray-700">{callerName}{dateLabel ? ` · ${dateLabel}` : ''}</span>
+                            <button
+                                onClick={() => { setCalledBy?.(''); setCalledFrom?.(''); setCalledTo?.(''); }}
+                                className="ml-2 p-0.5 rounded-full text-violet-300 hover:bg-violet-100 hover:text-violet-600 transition-colors"
+                            >
+                                <CloseOutlined style={{ fontSize: 12 }} />
+                            </button>
+                        </div>
+                    );
+                })()}
 
                 {/* Add Condition Button */}
                 <Dropdown

@@ -35,7 +35,7 @@ import { getMe } from "../../../utils/api";
 import { useTodayFollowUps, useTomorrowFollowUps, useCallerDashboardStats } from "../../../hooks/queries/useCallerQueries";
 import { usePageTitle } from "../../../contexts/TopbarTitleContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { buildLeadsUrl, callerRangeToLeadsFilter, callerRangeToBookingDateFilter, callerRangeLabel } from "../../../utils/leadsNavigation";
+import { buildLeadsUrl, callerRangeToLeadsFilter, callerRangeToBookingDateFilter, callerRangeToCalledFilter, callerRangeLabel } from "../../../utils/leadsNavigation";
 import { useSocket } from "../../../contexts/SocketProvider";
 import { useAuth } from "../../../contexts/AuthContext";
 import Loader from "../../../components/Loader";
@@ -75,6 +75,11 @@ const formatDurationAgo = (mins) => {
     if (h < 24) return `${h}h`;
     const d = Math.floor(h / 24);
     return `${d}d`;
+};
+const formatActualTime = (isoString) => {
+    if (!isoString) return "—";
+    const d = new Date(isoString);
+    return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
 };
 const withinNextMinutes = (d, mins = 60) => {
     if (!d) return false;
@@ -271,7 +276,7 @@ const getDateRangeBounds = (range, customFrom, customTo) => {
 
 /* -------------------- page -------------------- */
 export default function CallersDashboard() {
-    const { hasPermission } = useAuth();
+    const { hasPermission, user: authUser } = useAuth();
     const [me, setMe] = useState(null);
     const [err, setErr] = useState("");
     usePageTitle("Caller Dashboard", "Welcome back");
@@ -332,6 +337,12 @@ export default function CallersDashboard() {
         const bookingFilter = callerRangeToBookingDateFilter(dateRange, customFrom, customTo, 'diag');
         return buildLeadsUrl({ ...bookingFilter, diagBookingStatus });
     }, [dateRange, customFrom, customTo]);
+
+    const toCalledLeads = useCallback(() => {
+        const callerId = authUser?.data?._id || authUser?.data?.id;
+        if (!callerId) return toLeads();
+        return buildLeadsUrl(callerRangeToCalledFilter(callerId, dateRange, customFrom, customTo));
+    }, [authUser, dateRange, customFrom, customTo, toLeads]);
 
     // socket + toasts
     const { socket, isConnected } = useSocket();
@@ -504,6 +515,8 @@ export default function CallersDashboard() {
         const idleMin = stats.idleMin || 0;
         const firstCallAgoMin = stats.firstCallAgoMin !== undefined ? stats.firstCallAgoMin : null;
         const lastCallAgoMin = stats.lastCallAgoMin || null;
+        const firstCallAt = stats.firstCallAt || null;
+        const lastCallAt = stats.lastCallAt || null;
 
         const opdBookedToday = stats.opdBookedToday || 0;
         const opdDoneToday = stats.opdDoneToday || 0;
@@ -553,6 +566,8 @@ export default function CallersDashboard() {
             idleMin,
             firstCallAgoMin,
             lastCallAgoMin,
+            firstCallAt,
+            lastCallAt,
             upcomingHour,
             statusCounts,
             tomorrowIpBooked,
@@ -759,7 +774,7 @@ export default function CallersDashboard() {
                                 color={computed.callsMadeToday ? "blue" : "orange"}
                                 max={50}
                                 icon={PhoneOutlined}
-                                onClick={() => navigate(toLeads())}
+                                onClick={() => navigate(toCalledLeads())}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -771,7 +786,7 @@ export default function CallersDashboard() {
                                 color={computed.connectedCallsToday ? "green" : "orange"}
                                 max={50}
                                 icon={PhoneOutlined}
-                                onClick={() => navigate(toLeads())}
+                                onClick={() => navigate(toCalledLeads())}
                             />
                         </Col>
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
@@ -800,10 +815,10 @@ export default function CallersDashboard() {
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
                             <CommonMetricCard
                                 title="First Call Made"
-                                value={computed.firstCallAgoMin !== null ? formatDurationAgo(computed.firstCallAgoMin) : "—"}
-                                hint={computed.firstCallAgoMin !== null ? "Started early!" : "Start your calls"}
+                                value={computed.firstCallAt ? formatActualTime(computed.firstCallAt) : "—"}
+                                hint={computed.firstCallAt ? "Started early!" : "Start your calls"}
                                 footer={computed.firstCallAgoMin !== null ? `${formatDurationAgo(computed.firstCallAgoMin)} ago` : "No call yet"}
-                                color={computed.firstCallAgoMin !== null ? "blue" : "orange"}
+                                color={computed.firstCallAt ? "blue" : "orange"}
                                 max={60}
                                 icon={PhoneOutlined}
                                 onClick={() => navigate(toLeads())}
@@ -812,7 +827,7 @@ export default function CallersDashboard() {
                         <Col xs={24} sm={12} md={12} lg={8} xl={6}>
                             <CommonMetricCard
                                 title="Last Call Made"
-                                value={computed.lastCallAgoMin !== null ? formatDurationAgo(computed.lastCallAgoMin) : "—"}
+                                value={computed.lastCallAt ? formatActualTime(computed.lastCallAt) : "—"}
                                 hint={
                                     computed.lastCallAgoMin !== null && computed.lastCallAgoMin < 60
                                         ? "Great activity!"
@@ -824,7 +839,7 @@ export default function CallersDashboard() {
                                         : "No call yet"
                                 }
                                 color={
-                                    computed.lastCallAgoMin !== null && computed.lastCallAgoMin < 60
+                                    computed.lastCallAt && computed.lastCallAgoMin < 60
                                         ? "green"
                                         : "orange"
                                 }

@@ -167,6 +167,9 @@ exports.exportLeads = async (req, res) => {
             } else if (filters.followupFilter === 'Overdue') {
                 const { start: dayStart } = dayBoundsIST(now);
                 query.followUpAt = { $lt: dayStart, $ne: null };
+            } else if (filters.followupFilter === 'Till Now') {
+                const { end: dayEnd } = dayBoundsIST(now);
+                query.followUpAt = { $lte: dayEnd, $ne: null };
             } else if (filters.followupFilter === 'Not Scheduled') {
                 query.$and = query.$and || [];
                 query.$and.push({

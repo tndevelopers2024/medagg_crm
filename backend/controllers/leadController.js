@@ -356,6 +356,15 @@ const buildLeadFilter = async (query) => {
       } else {
         filter.followUpAt = { $lt: dayStart, $ne: null };
       }
+    } else if (followup === 'Till Now') {
+      if (isNot) {
+        filter.$and = filter.$and || [];
+        filter.$and.push({
+          $or: [{ followUpAt: null }, { followUpAt: { $exists: false } }, { followUpAt: { $gt: dayEnd } }],
+        });
+      } else {
+        filter.followUpAt = { $lte: dayEnd, $ne: null };
+      }
     } else if (followup === 'Not Scheduled') {
       filter.$and = filter.$and || [];
       if (isNot) {
@@ -395,6 +404,30 @@ const buildLeadFilter = async (query) => {
     }
     if (Object.keys(callCountFilter).length > 0) {
       filter.callCount = callCountFilter;
+    }
+  }
+
+  // Called-in-period filter — used by BD Activity Tracker drill-through.
+  // Looks up CallLogs for exact lead IDs called by the caller in the date range,
+  // matching the same uniqueDials logic used to compute the tracker numbers.
+  const { calledBy, calledFrom, calledTo } = query;
+  if (calledBy || calledFrom || calledTo) {
+    try {
+      const CallLog = require('../models/CallLog');
+      const callLogMatch = {};
+      if (calledBy) callLogMatch.caller = require('mongoose').Types.ObjectId.isValid(calledBy)
+        ? new (require('mongoose').Types.ObjectId)(calledBy) : calledBy;
+      if (calledFrom || calledTo) {
+        callLogMatch.createdAt = {};
+        if (calledFrom) callLogMatch.createdAt.$gte = new Date(`${calledFrom}T00:00:00+05:30`);
+        if (calledTo)   callLogMatch.createdAt.$lte = new Date(`${calledTo}T23:59:59+05:30`);
+      }
+      const calledLeadIds = await CallLog.distinct('lead', callLogMatch);
+      filter._id = filter._id
+        ? { $in: calledLeadIds.filter(id => (filter._id.$in || []).some(eid => eid.toString() === id.toString())) }
+        : { $in: calledLeadIds };
+    } catch (e) {
+      console.error('calledBy filter error:', e.message);
     }
   }
 
@@ -608,6 +641,78 @@ const buildLeadFilter = async (query) => {
         { ipBookings: { $elemMatch: { caseType: { $regex: /diagnostic/i } } } },
       ]
     });
+  }
+
+  // Date preset filters for custom date-type fields — fieldDatePreset__<name>=<preset>
+  for (const key of Object.keys(query)) {
+    if (key.startsWith('fieldDatePreset__')) {
+      const fieldName = key.slice(17);
+      const preset = query[key];
+      if (!preset || preset === 'All') continue;
+
+      const _now = new Date();
+      const _dayBoundsIST = (d) => {
+        const dt = new Date(d);
+        const istDate = new Date(dt.getTime() + (5.5 * 60 * 60 * 1000));
+        istDate.setUTCHours(0, 0, 0, 0);
+        const start = new Date(istDate.getTime() - (5.5 * 60 * 60 * 1000));
+        return { start, end: new Date(start.getTime() + 86399999) };
+      };
+      const { start: _dayStart, end: _dayEnd } = _dayBoundsIST(_now);
+
+      const nameVariants = [
+        fieldName,
+        fieldName.replace(/_/g, ' '),
+        fieldName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      ];
+
+      filter.$and = filter.$and || [];
+
+      if (preset === 'Scheduled') {
+        filter.$and.push({
+          fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $elemMatch: { $gt: _dayEnd.toISOString() } } } }
+        });
+      } else if (preset === 'Today') {
+        filter.$and.push({
+          fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $elemMatch: { $gte: _dayStart.toISOString(), $lte: _dayEnd.toISOString() } } } }
+        });
+      } else if (preset === 'Tomorrow') {
+        const tmr = new Date(_now.getTime() + 24 * 60 * 60 * 1000);
+        const { start: tmrStart, end: tmrEnd } = _dayBoundsIST(tmr);
+        filter.$and.push({
+          fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $elemMatch: { $gte: tmrStart.toISOString(), $lte: tmrEnd.toISOString() } } } }
+        });
+      } else if (preset === 'This Week') {
+        const weekEnd = new Date(_now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const { end: weekEndBound } = _dayBoundsIST(weekEnd);
+        filter.$and.push({
+          fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $elemMatch: { $gte: _now.toISOString(), $lte: weekEndBound.toISOString() } } } }
+        });
+      } else if (preset === 'Overdue') {
+        filter.$and.push({
+          fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $elemMatch: { $lt: _dayStart.toISOString(), $gt: '' } } } }
+        });
+      } else if (preset === 'Till Now') {
+        filter.$and.push({
+          fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $elemMatch: { $lte: _dayEnd.toISOString(), $gt: '' } } } }
+        });
+      } else if (preset === 'Not Scheduled') {
+        filter.$and.push({
+          $nor: [{ fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $exists: true, $ne: [] } } } }]
+        });
+      } else if (preset === 'Custom') {
+        const fromParam = query[`fieldDateFrom__${fieldName}`];
+        const toParam = query[`fieldDateTo__${fieldName}`];
+        if (fromParam || toParam) {
+          const valueCond = {};
+          if (fromParam) valueCond.$gte = _dayBoundsIST(new Date(`${fromParam}T00:00:00+05:30`)).start.toISOString();
+          if (toParam) valueCond.$lte = _dayBoundsIST(new Date(`${toParam}T00:00:00+05:30`)).end.toISOString();
+          filter.$and.push({
+            fieldData: { $elemMatch: { name: { $in: nameVariants }, values: { $elemMatch: valueCond } } }
+          });
+        }
+      }
+    }
   }
 
   // Generic custom field filters — field__<name>=<value>, fieldOp__<name>=is_not
