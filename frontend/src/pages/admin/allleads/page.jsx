@@ -139,9 +139,12 @@ export default function LeadsManagement() {
   const columnVis = useColumnVisibility(allColumns);
 
   // Filter templates
+  const [filterResetKey, setFilterResetKey] = useState(0);
+
   const templates = useFilterTemplates({
     notify,
     authLoading,
+    onTemplateApplied: () => setFilterResetKey(k => k + 1),
     filterSetters: {
       resetFilterOperators: filters.resetFilterOperators,
       setLeadStatus: filters.setLeadStatus,
@@ -151,6 +154,8 @@ export default function LeadsManagement() {
       setCustomTo: filters.setCustomTo,
       setSource: filters.setSource,
       setFollowupFilter: filters.setFollowupFilter,
+      setFollowupFrom: filters.setFollowupFrom,
+      setFollowupTo: filters.setFollowupTo,
       setOpdStatus: filters.setOpdStatus,
       setIpdStatus: filters.setIpdStatus,
       setDiagnostics: filters.setDiagnostics,
@@ -412,6 +417,7 @@ export default function LeadsManagement() {
       {/* Filters */}
       <section className="mb-6">
         <LeadFilters
+          resetKey={filterResetKey}
           dateMode={filters.dateMode} setDateMode={filters.setDateMode}
           customFrom={filters.customFrom} setCustomFrom={filters.setCustomFrom}
           customTo={filters.customTo} setCustomTo={filters.setCustomTo}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Select, Input, Tag, Dropdown, Button, DatePicker, Space } from "antd";
 import {
     CloseOutlined,
@@ -185,6 +185,7 @@ const LeadFilters = ({
     calledBy, calledFrom, calledTo,
     setCalledBy, setCalledFrom, setCalledTo,
     callers = [],
+    resetKey = 0,
 }) => {
     const allFilters = useMemo(() => {
         const standard = Object.values(STANDARD_CONFIG);
@@ -204,9 +205,20 @@ const LeadFilters = ({
 
     const [visibleFilters, setVisibleFilters] = useState(new Set());
 
+    // Tracks filter pills explicitly opened by the user (may still be empty/default value)
+    const userAddedRef = useRef(new Set());
+
+    // When a saved filter is applied (resetKey changes), clear explicitly-added pills.
+    // MUST be defined BEFORE the sync effect so it runs first and clears the ref.
     useEffect(() => {
-        const newVisible = new Set(visibleFilters);
+        userAddedRef.current = new Set();
+    }, [resetKey]);
+
+    useEffect(() => {
+        // Start from explicitly-added pills (user opened via "+ Add Condition")
+        const newVisible = new Set(userAddedRef.current);
         if (Array.isArray(status) && status.length > 0) newVisible.add('status');
+        if (Array.isArray(lostStatus) && lostStatus.length > 0) newVisible.add('lostStatus');
         if (source !== STANDARD_CONFIG.source.defaultValue) newVisible.add('source');
         if (Array.isArray(caller) && caller.length > 0) newVisible.add('caller');
         if (followup !== STANDARD_CONFIG.followup.defaultValue) newVisible.add('followup');
@@ -235,10 +247,14 @@ const LeadFilters = ({
                 }
             }
         }
-        if (newVisible.size > visibleFilters.size) setVisibleFilters(newVisible);
-    }, [status, source, caller, followup, opd, opdDate, ipd, ipdDate, diag, diagStatus, diagDate, campaign, customFieldFilters, operators, filterIncludeTexts, dateMode]);
+        // Full sync: update whenever the computed set differs (handles both additions and removals)
+        const setsEqual = newVisible.size === visibleFilters.size &&
+            [...newVisible].every(v => visibleFilters.has(v));
+        if (!setsEqual) setVisibleFilters(newVisible);
+    }, [status, lostStatus, source, caller, followup, opd, opdDate, ipd, ipdDate, diag, diagStatus, diagDate, campaign, customFieldFilters, operators, filterIncludeTexts, dateMode, resetKey]);
 
     const addFilter = (filterKey) => {
+        userAddedRef.current = new Set([...userAddedRef.current, filterKey]);
         setVisibleFilters(prev => new Set([...prev, filterKey]));
         if (onOperatorChange) onOperatorChange(filterKey, 'is');
     };
@@ -322,6 +338,7 @@ const LeadFilters = ({
                 }
                 onOperatorChange?.(filterKey, 'is');
         }
+        userAddedRef.current = new Set([...userAddedRef.current].filter(k => k !== filterKey));
         setVisibleFilters(prev => {
             const next = new Set(prev);
             next.delete(filterKey);

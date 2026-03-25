@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { Modal, Select, Button, Result, Space, Segmented, InputNumber, Tooltip } from "antd";
+import { Modal, Select, Button, Result, Space, Segmented, InputNumber, Tooltip, Input } from "antd";
 import { ExclamationCircleOutlined, DeleteOutlined } from "@ant-design/icons";
 
 export function AssignModal({ open, onClose, callers, onConfirm, count }) {
@@ -306,6 +306,14 @@ export function AssignLocationModal({ open, onClose, callers, onConfirm }) {
 }
 
 export function DeleteModal({ open, onClose, onConfirm, count, isDeleting }) {
+    const [confirmText, setConfirmText] = useState('');
+    const confirmed = confirmText === 'CONFIRM';
+
+    // Reset input whenever modal opens/closes
+    useEffect(() => {
+        if (!open) setConfirmText('');
+    }, [open]);
+
     return (
         <Modal
             title={
@@ -319,16 +327,26 @@ export function DeleteModal({ open, onClose, onConfirm, count, isDeleting }) {
             footer={
                 <Space>
                     <Button onClick={onClose} disabled={isDeleting}>Cancel</Button>
-                    <Button danger type="primary" onClick={onConfirm} loading={isDeleting}>
+                    <Button danger type="primary" onClick={onConfirm} loading={isDeleting} disabled={!confirmed || isDeleting}>
                         {isDeleting ? "Deleting..." : "Delete Leads"}
                     </Button>
                 </Space>
             }
             width={480}
         >
-            <p className="text-sm text-gray-500">
-                Are you sure you want to delete these {count} leads? All of their data will be permanently removed. This action cannot be undone.
+            <p className="text-sm text-gray-500 mb-4">
+                Are you sure you want to delete these <strong>{count}</strong> leads? All of their data will be permanently removed. This action cannot be undone.
             </p>
+            <p className="text-xs text-gray-500 mb-1">
+                Type <span className="font-mono font-bold text-red-500">CONFIRM</span> to enable deletion:
+            </p>
+            <Input
+                value={confirmText}
+                onChange={e => setConfirmText(e.target.value)}
+                placeholder="Type CONFIRM"
+                status={confirmText && !confirmed ? 'error' : ''}
+                autoComplete="off"
+            />
         </Modal>
     );
 }

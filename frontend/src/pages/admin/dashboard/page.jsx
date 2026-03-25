@@ -339,7 +339,7 @@ export default function Dashboard() {
               const filterMap = {
                 todaysLeads:         { ...dateFilter },
                 pendingNewLeads:     { ...dateFilter, callerFilter: ['Unassigned'] },
-                pendingTasks:            { leadStatus: ['Hot', 'Pros', 'DNP', 'Recapture New'], followupFilter: 'Custom', followupTo: new Date().toISOString().slice(0, 10) },
+                pendingTasks:            { leadStatus: ['Hot', 'Hot-IP', 'Pros', 'Prospective', 'DNP', 'Recapture New'], followupFilter: 'Custom', followupTo: new Date().toISOString().slice(0, 10) },
                 tomorrowOpdDiagBooked:  (() => {
                   const t = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000);
                   const tStr = t.toISOString().slice(0, 10);

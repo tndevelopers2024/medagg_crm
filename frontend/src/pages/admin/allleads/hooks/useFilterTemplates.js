@@ -8,7 +8,7 @@ import {
   applyFilterTemplate,
 } from "../../../../utils/filterTemplateApi";
 
-export default function useFilterTemplates({ notify, authLoading, filterSetters, columnVisibility }) {
+export default function useFilterTemplates({ notify, authLoading, onTemplateApplied, filterSetters, columnVisibility }) {
   const [filterTemplates, setFilterTemplates] = useState([]);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
   const [showEditTemplateModal, setShowEditTemplateModal] = useState(false);
@@ -45,20 +45,26 @@ export default function useFilterTemplates({ notify, authLoading, filterSetters,
       if (s.resetFilterOperators) s.resetFilterOperators();
       s.setLeadStatus(Array.isArray(template.filters.status) ? template.filters.status : []);
       s.setCallerFilter(Array.isArray(template.filters.assignee) ? template.filters.assignee : []);
-      s.setDateMode(template.filters.dateMode || '7d');
-      if (template.filters.dateRange?.start) {
-        s.setCustomFrom(new Date(template.filters.dateRange.start).toISOString().split('T')[0]);
-      }
-      if (template.filters.dateRange?.end) {
-        s.setCustomTo(new Date(template.filters.dateRange.end).toISOString().split('T')[0]);
-      }
+      // Use ?? '' so an empty dateMode (All Time) is not overridden with '7d'
+      s.setDateMode(template.filters.dateMode ?? '');
+      // Always reset custom date range (clear old values when template has no custom range)
+      s.setCustomFrom(template.filters.dateRange?.start
+        ? new Date(template.filters.dateRange.start).toISOString().split('T')[0]
+        : '');
+      s.setCustomTo(template.filters.dateRange?.end
+        ? new Date(template.filters.dateRange.end).toISOString().split('T')[0]
+        : '');
       s.setSource(template.filters.source?.[0] || 'All Sources');
       s.setFollowupFilter(template.filters.followup?.[0] || 'All');
+      if (s.setFollowupFrom) s.setFollowupFrom(template.filters.followupFrom || '');
+      if (s.setFollowupTo) s.setFollowupTo(template.filters.followupTo || '');
       s.setOpdStatus(template.filters.opd?.[0] || 'OPD Status');
       s.setIpdStatus(template.filters.ipd?.[0] || 'IPD Status');
       s.setDiagnostics(template.filters.diagnostic?.[0] || 'Diagnostics');
       s.setCampaignFilter(Array.isArray(template.filters.campaign) ? template.filters.campaign : []);
       s.setSearch(template.filters.searchQuery || '');
+      // Signal LeadFilters to recompute visible condition pills from scratch
+      if (onTemplateApplied) onTemplateApplied();
 
       // Restore column visibility if available
       if (template.columnVisibility && columnVisibility?.setVisibleColumns) {

@@ -56,7 +56,11 @@ export default function useLeadActions({
       if (combinedFields && Array.isArray(combinedFields)) {
         combinedFields.forEach((field) => {
           if (field.isRequired) {
-            const value = currentData.leadData[field.fieldName];
+            // call_later_date maps to lead.followUpAt, not leadData
+            const isCallLaterField = /call_later/i.test(field.fieldName);
+            const value = isCallLaterField
+              ? (lead?.followUpAt || currentData.leadData[field.fieldName])
+              : currentData.leadData[field.fieldName];
             if (!value || String(value).trim() === "") {
               missingFields.push(field.displayLabel || field.fieldName);
             }

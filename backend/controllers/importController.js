@@ -52,8 +52,8 @@ const isBlankValue = (raw) => BLANK_PLACEHOLDERS.has(String(raw ?? "").toLowerCa
  * Parse a date string from TelCRM exports.
  *
  * Supported formats (with optional HH:MM:SS time component):
- *   DD/MM/YYYY [HH:MM:SS]   ← TelCRM default e.g. "13/12/2025 07:30:37"
- *   DD-MM-YYYY [HH:MM:SS]
+ *   DD/MM/YYYY or MM/DD/YYYY [HH:MM:SS]  ← auto-detected; if first part > 12 it's DD, else MM/DD assumed
+ *   DD-MM-YYYY or MM-DD-YYYY [HH:MM:SS]  ← same auto-detection
  *   DD.MM.YYYY [HH:MM:SS]
  *   ISO 8601 / RFC 2822       ← handled by native Date()
  *   Excel serial numbers       ← numeric cell values from .xlsx
@@ -105,24 +105,38 @@ const parseDate = (raw) => {
     return sanitize(dt);
   };
 
-  // DD/MM/YYYY or D/M/YY
+  /**
+   * Smart day/month detection for ambiguous numeric dates (slash, dash, dot separators).
+   * Rules:
+   *   - If p1 > 12 → must be the day  → DD/MM/YYYY order
+   *   - If p2 > 12 → must be the day  → MM/DD/YYYY order
+   *   - Both ≤ 12  → ambiguous; default to DD/MM/YYYY (our CRM standard)
+   */
+  const resolveDate = (p1, p2, p3) => {
+    const n1 = Number(p1), n2 = Number(p2);
+    if (n1 > 12) return buildDate(p1, p2, p3, timePart); // p1 is day
+    if (n2 > 12) return buildDate(p2, p1, p3, timePart); // p2 is day
+    return buildDate(p1, p2, p3, timePart);               // ambiguous → DD/MM/YYYY
+  };
+
+  // DD/MM/YYYY, MM/DD/YYYY, or M/D/YY
   const dmySlash = datePart.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (dmySlash) {
-    const result = buildDate(dmySlash[1], dmySlash[2], dmySlash[3], timePart);
+    const result = resolveDate(dmySlash[1], dmySlash[2], dmySlash[3]);
     if (result) return result;
   }
 
-  // DD-MM-YYYY or D-M-YY
+  // DD-MM-YYYY or MM-DD-YYYY
   const dmyDash = datePart.match(/^(\d{1,2})-(\d{1,2})-(\d{2,4})$/);
   if (dmyDash) {
-    const result = buildDate(dmyDash[1], dmyDash[2], dmyDash[3], timePart);
+    const result = resolveDate(dmyDash[1], dmyDash[2], dmyDash[3]);
     if (result) return result;
   }
 
-  // DD.MM.YYYY
+  // DD.MM.YYYY or MM.DD.YYYY
   const dmyDot = datePart.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
   if (dmyDot) {
-    const result = buildDate(dmyDot[1], dmyDot[2], dmyDot[3], timePart);
+    const result = resolveDate(dmyDot[1], dmyDot[2], dmyDot[3]);
     if (result) return result;
   }
 

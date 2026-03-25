@@ -93,6 +93,7 @@ export default function StepFieldMapping({ headers, sampleRows, mappings, onMapp
   const [createModal, setCreateModal] = React.useState({ open: false, forHeader: null });
   const [createForm] = Form.useForm();
   const [creating, setCreating] = React.useState(false);
+  const [deleteConfirm, setDeleteConfirm] = React.useState({ open: false, id: null, text: '' });
 
   // Keep a ref to mappings so effects can read current value without becoming stale
   const mappingsRef = React.useRef(mappings);
@@ -191,13 +192,19 @@ export default function StepFieldMapping({ headers, sampleRows, mappings, onMapp
     }
   };
 
-  const handleDeleteTemplate = async (id) => {
+  const handleDeleteTemplate = (id) => {
+    setDeleteConfirm({ open: true, id, text: '' });
+  };
+
+  const handleDeleteConfirmed = async () => {
     try {
-      await deleteImportMapping(id);
-      setSavedTemplates((prev) => prev.filter((t) => t._id !== id));
+      await deleteImportMapping(deleteConfirm.id);
+      setSavedTemplates((prev) => prev.filter((t) => t._id !== deleteConfirm.id));
       message.success("Template deleted.");
     } catch {
       message.error("Failed to delete.");
+    } finally {
+      setDeleteConfirm({ open: false, id: null, text: '' });
     }
   };
 
@@ -361,6 +368,41 @@ export default function StepFieldMapping({ headers, sampleRows, mappings, onMapp
           value={templateName}
           onChange={(e) => setTemplateName(e.target.value)}
           onPressEnter={handleSaveTemplate}
+        />
+      </Modal>
+
+      {/* Delete mapping template confirm modal */}
+      <Modal
+        title={<span className="text-red-600">Delete Mapping Template</span>}
+        open={deleteConfirm.open}
+        onCancel={() => setDeleteConfirm({ open: false, id: null, text: '' })}
+        footer={[
+          <Button key="cancel" onClick={() => setDeleteConfirm({ open: false, id: null, text: '' })}>
+            Cancel
+          </Button>,
+          <Button
+            key="delete"
+            danger
+            type="primary"
+            disabled={deleteConfirm.text !== 'CONFIRM'}
+            onClick={handleDeleteConfirmed}
+          >
+            Delete Template
+          </Button>,
+        ]}
+      >
+        <p className="text-sm text-gray-500 mb-3">
+          This mapping template will be permanently deleted. This action cannot be undone.
+        </p>
+        <p className="text-xs text-gray-500 mb-1">
+          Type <span className="font-mono font-bold text-red-500">CONFIRM</span> to enable deletion:
+        </p>
+        <Input
+          value={deleteConfirm.text}
+          onChange={e => setDeleteConfirm(prev => ({ ...prev, text: e.target.value }))}
+          placeholder="Type CONFIRM"
+          status={deleteConfirm.text && deleteConfirm.text !== 'CONFIRM' ? 'error' : ''}
+          autoComplete="off"
         />
       </Modal>
 

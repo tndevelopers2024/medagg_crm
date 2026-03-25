@@ -2539,6 +2539,7 @@ const getAdminDashboardV2 = async (req, res) => {
   try {
     const CallLog = require("../models/CallLog");
     const Campaign = require("../models/Campaign");
+    const LeadActivity = require("../models/LeadActivity");
 
     // Permission check
     // Permission check
@@ -2594,15 +2595,15 @@ const getAdminDashboardV2 = async (req, res) => {
 
     // ---- KPI Cards ----
     // Today / tomorrow bounds in IST — fixed regardless of dashboard datePreset
-    const { end: todayEndIST, tomorrowStart, tomorrowEnd } = (() => {
+    const { start: todayStartIST, end: todayEndIST, tomorrowStart, tomorrowEnd } = (() => {
       const now2 = new Date();
       const istDate = new Date(now2.getTime() + 5.5 * 60 * 60 * 1000);
       istDate.setUTCHours(0, 0, 0, 0);
       const todayS = new Date(istDate.getTime() - 5.5 * 60 * 60 * 1000);
       const todayE = new Date(todayS.getTime() + 86399999);
-      return { end: todayE, tomorrowStart: new Date(todayS.getTime() + 86400000), tomorrowEnd: new Date(todayE.getTime() + 86400000) };
+      return { start: todayS, end: todayE, tomorrowStart: new Date(todayS.getTime() + 86400000), tomorrowEnd: new Date(todayE.getTime() + 86400000) };
     })();
-    const PENDING_STATUSES = [/^Hot$/i, /^Pros$/i, /^DNP$/i, /^Recapture New$/i];
+    const PENDING_STATUSES = [/^Hot$/i, /^Hot-IP$/i, /^Pros$/i, /^Prospective$/i, /^DNP$/i, /^Recapture New$/i];
 
     const [
       todaysLeads,
@@ -2620,7 +2621,16 @@ const getAdminDashboardV2 = async (req, res) => {
       diagnosticDoneAgg,
       tomorrowIpBookedAgg,
     ] = await Promise.all([
-      Lead.countDocuments({ createdTime: dateFilter, ...leadMatch }),
+      // Leads whose status changed FROM "New Lead" today (status transitioned away from new)
+      (async () => {
+        const ids = await LeadActivity.distinct('lead', {
+          action: 'lead_update',
+          'diff.before.status': /^new(?: lead)?$/i,
+          createdAt: { $gte: todayStartIST, $lte: todayEndIST },
+        });
+        if (!ids.length) return 0;
+        return Lead.countDocuments({ _id: { $in: ids }, ...leadMatch });
+      })(),
       Lead.countDocuments({ createdTime: dateFilter, assignedTo: null, ...leadMatch }),
       Lead.countDocuments({
         status: { $in: PENDING_STATUSES },

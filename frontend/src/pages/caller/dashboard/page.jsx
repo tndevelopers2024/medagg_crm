@@ -652,11 +652,11 @@ export default function CallersDashboard() {
                         <StatCard
                             title="Pending Tasks"
                             value={computed.pendingTasksCount}
-                            sub="Hot · Pros · DNP · Recapture"
+                            sub="Hot · Hot-IP · Pros · Prospective · DNP · Recapture"
                             icon={ClockCircleOutlined}
                             color="orange"
                             onClick={() => navigate(buildLeadsUrl({
-                                leadStatus: ['Hot', 'Pros', 'DNP', 'Recapture New'],
+                                leadStatus: ['Hot', 'Hot-IP', 'Pros', 'Prospective', 'DNP', 'Recapture New'],
                                 followupFilter: 'Custom',
                                 followupTo: new Date().toISOString().slice(0, 10),
                             }))}

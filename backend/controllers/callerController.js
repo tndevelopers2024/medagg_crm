@@ -866,7 +866,7 @@ const getDashboardStats = async (req, res) => {
     const buckets = {};
 
     // 3. Tasks — always today/tomorrow regardless of the selected date range
-    const PENDING_STATUSES = [/^Hot$/i, /^Pros$/i, /^DNP$/i, /^Recapture New$/i];
+    const PENDING_STATUSES = [/^Hot$/i, /^Hot-IP$/i, /^Pros$/i, /^Prospective$/i, /^DNP$/i, /^Recapture New$/i];
     const [tasksTodayCount, tasksTomorrowCount, pendingTasksCount] = await Promise.all([
       Lead.countDocuments({ assignedTo: callerId, followUpAt: { $gte: todayStart, $lte: todayEnd } }),
       Lead.countDocuments({ assignedTo: callerId, followUpAt: { $gte: tomorrowStart, $lte: tomorrowEnd } }),
@@ -976,11 +976,15 @@ const getDashboardStats = async (req, res) => {
       ]),
     ]);
 
-    // 5. Today New Leads
-    const todayNewLeads = await Lead.countDocuments({
-      assignedTo: callerId,
-      createdTime: { $gte: rangeStart, $lte: rangeEnd }
+    // 5. Today New Leads — leads whose status changed FROM "New Lead" today
+    const _newLeadIds = await LeadActivity.distinct('lead', {
+      action: 'lead_update',
+      'diff.before.status': /^new(?: lead)?$/i,
+      createdAt: { $gte: todayStart, $lte: todayEnd },
     });
+    const todayNewLeads = _newLeadIds.length
+      ? await Lead.countDocuments({ _id: { $in: _newLeadIds }, assignedTo: callerId })
+      : 0;
 
     // 6. Last call / First call / Idle time — scoped to the selected range
     const lastCallLog = await CallLog.findOne({ caller: callerId, createdAt: { $gte: rangeStart, $lte: rangeEnd } })
