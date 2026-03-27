@@ -38,7 +38,7 @@ export default function CsvImportPage() {
   const [mappings, setMappings] = React.useState({});
 
   // Step 3 state
-  const [duplicateHandling, setDuplicateHandling] = React.useState("skip");
+  const [duplicateHandling, setDuplicateHandling] = React.useState("import_all");
 
   // Step 4 state
   const [importing, setImporting] = React.useState(false);

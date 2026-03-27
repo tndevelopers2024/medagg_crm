@@ -150,6 +150,7 @@ const PERMISSION_TREE = {
           { key: "analytics.analytics.callsCountChart", label: "Calls Count Chart" },
           { key: "analytics.analytics.customFieldCharts", label: "Custom Field Charts" },
           { key: "analytics.analytics.export", label: "Export Analytics" },
+          { key: "analytics.analytics.ownLeadsOnly", label: "Own Leads Analytics Only" },
         ],
       },
     },

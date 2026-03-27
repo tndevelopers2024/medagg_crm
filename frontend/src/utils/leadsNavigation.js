@@ -61,6 +61,12 @@ export function buildLeadsUrl(filter = {}) {
   set('search', filter.search);
   set('batch', filter.batch);
 
+  // Status change (between) filter
+  set('statusFrom', filter.statusFrom);
+  set('statusTo', filter.statusTo);
+  set('statusDate', filter.statusDate);
+  set('statusDateTo', filter.statusDateTo);
+
   // Called-in-period filter — for BD tracker drill-through (shows leads actually called in period)
   set('calledBy', filter.calledBy);
   set('calledFrom', filter.calledFrom);

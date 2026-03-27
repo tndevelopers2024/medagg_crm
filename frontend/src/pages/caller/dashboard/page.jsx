@@ -531,9 +531,9 @@ export default function CallersDashboard() {
         // Let's use the explicit list length if available, or fallback to stats if list is empty but count > 0? 
         // Backend stats is arguably more accurate if lists are paginated (though lists here seem to be "all due").
         // Let's rely on stats for the *Count* display, and the list for the *Reminder* widgets.
-        const tasksTodayCount = stats.tasksTodayCount || todayTasks.length || 0;
-        const tasksTomorrowCount = stats.tasksTomorrowCount || tomorrowTasks.length || 0;
-        const pendingTasksCount = stats.pendingTasksCount || 0;
+        const tasksTodayCount = stats.tasksTodayCount || 0;
+        const tasksTomorrowCount = stats.tasksTomorrowCount || 0;
+        const pendingNewLeads = stats.pendingNewLeads || 0;
         const tomorrowOpdDiagBooked = stats.tomorrowOpdDiagBooked || 0;
         const tomorrowIpBooked = stats.tomorrowIpBooked || 0;
 
@@ -552,7 +552,7 @@ export default function CallersDashboard() {
             todayNewLeads,
             tasksTodayCount,
             tasksTomorrowCount,
-            pendingTasksCount,
+            pendingNewLeads,
             tomorrowOpdDiagBooked,
             opdBookedToday,
             opdDoneToday,
@@ -625,7 +625,24 @@ export default function CallersDashboard() {
                             sub={`${computed.todayNewLeads} leads`}
                             icon={UserOutlined}
                             color="purple"
-                            onClick={() => navigate(toLeads())}
+                            onClick={() => navigate(buildLeadsUrl({
+                                statusFrom: 'New Lead',
+                                statusDate: new Date().toISOString().slice(0, 10),
+                                statusDateTo: new Date().toISOString().slice(0, 10),
+                                filterOperators: { status: 'between' },
+                            }))}
+                        />
+                    </Col>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
+                        <StatCard
+                            title="Pending New Leads"
+                            value={computed.pendingNewLeads}
+                            sub="New Lead"
+                            icon={ClockCircleOutlined}
+                            color="orange"
+                            onClick={() => navigate(buildLeadsUrl({
+                                leadStatus: ['New Lead'],
+                            }))}
                         />
                     </Col>
                     <Col xs={24} sm={12} md={12} lg={6} xl={6}>
@@ -635,7 +652,14 @@ export default function CallersDashboard() {
                             sub={`${computed.tasksTodayCount} due`}
                             icon={CheckCircleOutlined}
                             color="pink"
-                            onClick={() => navigate("/leads?followup=Today")}
+                            onClick={() => {
+                                const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+                                navigate(buildLeadsUrl({
+                                    leadStatus: ['Hot', 'Hot-IP', 'Prospective', 'DNP', 'Recapture New'],
+                                    followupTo: tmr.toISOString().slice(0, 10),
+                                    filterOperators: { followup: 'before' },
+                                }));
+                            }}
                         />
                     </Col>
                     <Col xs={24} sm={12} md={12} lg={6} xl={6}>
@@ -645,20 +669,9 @@ export default function CallersDashboard() {
                             sub={`${computed.tasksTomorrowCount} scheduled`}
                             icon={CalendarOutlined}
                             color="blue"
-                            onClick={() => navigate("/leads?followup=Tomorrow")}
-                        />
-                    </Col>
-                    <Col xs={24} sm={12} md={12} lg={6} xl={6}>
-                        <StatCard
-                            title="Pending Tasks"
-                            value={computed.pendingTasksCount}
-                            sub="Hot · Hot-IP · Pros · Prospective · DNP · Recapture"
-                            icon={ClockCircleOutlined}
-                            color="orange"
                             onClick={() => navigate(buildLeadsUrl({
-                                leadStatus: ['Hot', 'Hot-IP', 'Pros', 'Prospective', 'DNP', 'Recapture New'],
-                                followupFilter: 'Custom',
-                                followupTo: new Date().toISOString().slice(0, 10),
+                                leadStatus: ['Hot', 'Hot-IP', 'Prospective', 'DNP'],
+                                followupFilter: 'Tomorrow',
                             }))}
                         />
                     </Col>

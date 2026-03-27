@@ -30,6 +30,7 @@ const buildLeadFilter = async (query) => {
     diagDate, diagDateTo, diagDateOp,
     statusOp, lostStatusOp, sourceOp, assignedToOp, campaignOp,
     followupOp, opdStatusOp, ipdStatusOp, diagnosticsOp,
+    lostStatusFrom, lostStatusTo, lostStatusDate, lostStatusDateTo,
   } = query;
 
   // Batch (form name) filter
@@ -56,7 +57,10 @@ const buildLeadFilter = async (query) => {
 
       const leadIds = await LeadActivity.distinct('lead', activityQuery);
       filter._id = { $in: leadIds };
-    } catch (e) { /* ignore lookup errors */ }
+    } catch (e) {
+      console.error('[buildLeadFilter] statusOp=between LeadActivity query failed:', e);
+      filter._id = { $in: [] };
+    }
   } else if (lostStatusOp === 'between' && (lostStatusFrom || lostStatusTo)) {
     // Find leads that had a lost status transition from lostStatusFrom → lostStatusTo via LeadActivity
     try {
@@ -74,7 +78,10 @@ const buildLeadFilter = async (query) => {
 
       const leadIds = await LeadActivity.distinct('lead', activityQuery);
       filter._id = { $in: leadIds };
-    } catch (e) { /* ignore lookup errors */ }
+    } catch (e) {
+      console.error('[buildLeadFilter] lostStatusOp=between LeadActivity query failed:', e);
+      filter._id = { $in: [] };
+    }
   } else if (statusOp === 'is_include' && status) {
     filter.$and = filter.$and || [];
     filter.$and.push({ status: { $regex: status, $options: 'i' } });

@@ -440,9 +440,25 @@ export const buildFieldColumns = (fieldConfigs = []) => {
       thClassName: "px-4 py-3 font-medium",
       tdClassName: "px-4 py-3 max-w-[160px] truncate",
       render: (lead) => {
+        const fieldNameLower = (fc.fieldName || "").toLowerCase();
+
+        // For call_later_date, followUpAt is the authoritative source (filter queries it)
+        // Use it to avoid showing stale fieldData values
+        if (/call_later_date|call_later|calllater/.test(fieldNameLower)) {
+          const rawFollowUp = lead.followUpAt;
+          if (rawFollowUp) {
+            const d = new Date(rawFollowUp);
+            if (!isNaN(d)) {
+              const istD = new Date(d.getTime() + 330 * 60 * 1000);
+              return `${String(istD.getUTCDate()).padStart(2, '0')}/${String(istD.getUTCMonth() + 1).padStart(2, '0')}/${istD.getUTCFullYear()}`;
+            }
+          }
+          return <span className="text-gray-400">—</span>;
+        }
+
         const fd = lead.raw?.fieldData || [];
         const match = fd.find(
-          (f) => (f?.name || "").toLowerCase() === (fc.fieldName || "").toLowerCase()
+          (f) => (f?.name || "").toLowerCase() === fieldNameLower
         );
         const val = match
           ? Array.isArray(match.values) ? match.values[0] : match.values || ""

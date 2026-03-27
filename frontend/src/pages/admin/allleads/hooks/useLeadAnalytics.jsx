@@ -52,6 +52,9 @@ export default function useLeadAnalytics({
   statusDateTo,
   fieldConfigs,
   notify,
+  ownLeadsOnly,
+  userId,
+  authLoading,
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -115,6 +118,11 @@ export default function useLeadAnalytics({
     const af = [...chartDrillFilters];
     const ops = filterOperators;
     const inc = filterIncludeTexts;
+
+    // Scope to own leads when role has "Own Leads Analytics Only" permission
+    if (ownLeadsOnly && userId) {
+      af.push({ id: "caller_scope", type: "assignee", operator: "is", values: [userId] });
+    }
 
     // Lead Status
     if (ops.status === 'is_empty') {
@@ -261,6 +269,7 @@ export default function useLeadAnalytics({
     customFieldFilters, filterOperators, filterIncludeTexts,
     opdDate, opdDateTo, ipdDate, ipdDateTo,
     statusFrom, statusTo, statusDate, statusDateTo,
+    ownLeadsOnly, userId,
   ]);
 
   const loadChartData = useCallback(async () => {
@@ -285,10 +294,10 @@ export default function useLeadAnalytics({
   }, [mergedAnalyticsFilters, chartType, chartSortBy, chartSortOrder, customFieldName]);
 
   useEffect(() => {
-    if (viewMode === "chart") {
+    if (viewMode === "chart" && !authLoading) {
       loadChartData();
     }
-  }, [viewMode, loadChartData]);
+  }, [viewMode, loadChartData, authLoading]);
 
   const handleBarClick = useCallback((data) => {
     if (!data || !data.name) return;
@@ -299,6 +308,11 @@ export default function useLeadAnalytics({
 
     switch (chartType) {
       case "status":
+        // "Lost" bar is aggregated — clicking it switches to Lost Reasons chart
+        if (data.name === "Lost") {
+          setChartType("lostReasons");
+          return;
+        }
         filterType = "leadStatus";
         break;
       case "lostReasons":
@@ -345,7 +359,7 @@ export default function useLeadAnalytics({
     if (exists) return;
 
     setChartDrillFilters((prev) => [...prev, { id: Date.now(), type: filterType, operator: filterOperator, value: filterValue }]);
-  }, [chartType, customFieldName, chartDrillFilters]);
+  }, [chartType, setChartType, customFieldName, chartDrillFilters]);
 
   const removeChartDrillFilter = useCallback((filterId) => {
     setChartDrillFilters((prev) => prev.filter((f) => f.id !== filterId));

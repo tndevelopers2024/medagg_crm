@@ -866,14 +866,25 @@ const getDashboardStats = async (req, res) => {
     const buckets = {};
 
     // 3. Tasks — always today/tomorrow regardless of the selected date range
-    const PENDING_STATUSES = [/^Hot$/i, /^Hot-IP$/i, /^Pros$/i, /^Prospective$/i, /^DNP$/i, /^Recapture New$/i];
-    const [tasksTodayCount, tasksTomorrowCount, pendingTasksCount] = await Promise.all([
-      Lead.countDocuments({ assignedTo: callerId, followUpAt: { $gte: todayStart, $lte: todayEnd } }),
-      Lead.countDocuments({ assignedTo: callerId, followUpAt: { $gte: tomorrowStart, $lte: tomorrowEnd } }),
+    const TASK_STATUSES        = [/^Hot$/i, /^Hot-IP$/i, /^Pros$/i, /^Prospective$/i, /^DNP$/i, /^Recapture New$/i];
+    const TASK_TOMORROW_STATUS = [/^Hot$/i, /^Hot-IP$/i, /^Pros$/i, /^Prospective$/i, /^DNP$/i];
+    const [tasksTodayCount, tasksTomorrowCount, pendingNewLeads] = await Promise.all([
+      // Today's Task: Call Later <= NOW (overdue + today so far) with actionable statuses
       Lead.countDocuments({
         assignedTo: callerId,
-        status: { $in: PENDING_STATUSES },
-        followUpAt: { $exists: true, $ne: null, $lte: todayEnd },
+        status: { $in: TASK_STATUSES },
+        followUpAt: { $exists: true, $ne: null, $lte: now },
+      }),
+      // Tomorrow's Task: Call Later scheduled for tomorrow with actionable statuses
+      Lead.countDocuments({
+        assignedTo: callerId,
+        status: { $in: TASK_TOMORROW_STATUS },
+        followUpAt: { $gte: tomorrowStart, $lte: tomorrowEnd },
+      }),
+      // Pending New Leads: unprocessed leads still on "New Lead" status
+      Lead.countDocuments({
+        assignedTo: callerId,
+        status: /^new lead$/i,
       }),
     ]);
 
@@ -1032,7 +1043,7 @@ const getDashboardStats = async (req, res) => {
       lastCallAt,
       tasksTodayCount,
       tasksTomorrowCount,
-      pendingTasksCount,
+      pendingNewLeads,
       todayNewLeads,
       opdBookedToday: opdBookedToday[0]?.count || 0,
       opdDoneToday: opdDoneToday[0]?.count || 0,
@@ -1138,6 +1149,19 @@ const moveLeadToNextDay = async (req, res) => {
     }
 
     lead.followUpAt = newFollowUp;
+
+    // Sync fieldData call_later_date so the "Call Later Date" column stays in sync
+    const newDateIST = (() => {
+      const istMs = newFollowUp.getTime() + IST_OFFSET_MIN * 60000;
+      const d = new Date(istMs);
+      return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+    })();
+    const clIdx = (lead.fieldData || []).findIndex(f => /call_later_date|call_later|calllater/i.test(norm(f?.name || "")));
+    if (clIdx !== -1) {
+      lead.fieldData[clIdx].values = [newDateIST];
+      lead.markModified('fieldData');
+    }
+
     await lead.save();
 
     await logActivity(io, {

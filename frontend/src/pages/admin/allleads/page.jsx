@@ -215,6 +215,9 @@ export default function LeadsManagement() {
     statusDateTo: filters.statusDateTo,
     fieldConfigs,
     notify,
+    ownLeadsOnly: !isAdmin && hasPermission('analytics.analytics.ownLeadsOnly'),
+    userId: user?.data?._id || user?.data?.id || user?.id || user?._id,
+    authLoading,
   });
 
   // Export hook

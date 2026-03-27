@@ -445,22 +445,18 @@ exports.getLeadAnalytics = async (req, res) => {
 
 /**
  * Get status distribution
+ * Lost statuses are aggregated into a single "Lost" bar.
  */
 const getStatusDistribution = async (query) => {
-    // Exclude lost stages from main status distribution
     const lostStages = await LeadStageConfig.find({ stageCategory: "lost", isActive: { $ne: false } }).select("displayLabel");
-    const lostDisplayLabels = lostStages.map(s => s.displayLabel).filter(Boolean);
-    
-    // Explicitly add 'Lost' to the exclude list just in case
-    const excludeLabels = [...new Set([...lostDisplayLabels, "Lost", "lost"])];
+    const lostLabels = new Set([...lostStages.map(s => s.displayLabel).filter(Boolean), "Lost", "lost"]);
+
+    // If a status filter is already applied, use it as-is; otherwise query everything
+    const matchStage = { ...query };
+    if (!matchStage.status) delete matchStage.status; // let all statuses through; we group below
 
     const results = await Lead.aggregate([
-        { 
-            $match: { 
-                ...query,
-                status: { $nin: excludeLabels }
-            } 
-        },
+        { $match: matchStage },
         {
             $group: {
                 _id: "$status",
@@ -470,9 +466,27 @@ const getStatusDistribution = async (query) => {
         { $sort: { count: -1 } },
     ]);
 
-    const total = results.reduce((sum, item) => sum + item.count, 0);
+    // Separate lost vs non-lost, accumulate lost into one bucket
+    let lostTotal = 0;
+    const nonLost = [];
 
-    return results.map((item) => ({
+    for (const item of results) {
+        const label = item._id || "Unknown";
+        if (lostLabels.has(label)) {
+            lostTotal += item.count;
+        } else {
+            nonLost.push(item);
+        }
+    }
+
+    const allItems = [...nonLost];
+    if (lostTotal > 0) {
+        allItems.push({ _id: "Lost", count: lostTotal });
+    }
+
+    const total = allItems.reduce((sum, item) => sum + item.count, 0);
+
+    return allItems.map((item) => ({
         name: item._id || "Unknown",
         count: item.count,
         percentage: total > 0 ? ((item.count / total) * 100).toFixed(2) : 0,

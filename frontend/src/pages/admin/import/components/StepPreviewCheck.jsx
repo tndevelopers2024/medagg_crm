@@ -1,5 +1,6 @@
 import React from "react";
-import { Table, Statistic, Row, Col, Card, Radio, Spin, Typography } from "antd";
+import { Table, Statistic, Row, Col, Card, Radio, Spin, Typography, Button, Tag, Collapse } from "antd";
+import { WarningOutlined, EyeOutlined } from "@ant-design/icons";
 import { checkDuplicates } from "../../../../utils/api";
 
 const { Text } = Typography;
@@ -34,6 +35,7 @@ export default function StepPreviewCheck({
   onDuplicateHandlingChange,
 }) {
   const [dupeStats, setDupeStats] = React.useState(null);
+  const [dupePhones, setDupePhones] = React.useState(new Set());
   const [checking, setChecking] = React.useState(false);
 
   React.useEffect(() => {
@@ -55,9 +57,13 @@ export default function StepPreviewCheck({
         const dupeSet = new Set(
           (res.duplicates || []).map((d) => String(d.value).replace(/\D/g, ""))
         );
+        setDupePhones(dupeSet);
         setDupeStats({ total: rows.length, dupes: dupeSet.size });
       })
-      .catch(() => setDupeStats({ total: rows.length, dupes: 0 }))
+      .catch(() => {
+        setDupePhones(new Set());
+        setDupeStats({ total: rows.length, dupes: 0 });
+      })
       .finally(() => setChecking(false));
   }, [rows, mappings]);
 
@@ -92,7 +98,54 @@ export default function StepPreviewCheck({
     [rows, mappings]
   );
 
+  // Build duplicate rows for the review table
+  const dupeRows = React.useMemo(() => {
+    if (!dupePhones.size || !rows?.length) return [];
+    return rows
+      .map((r, i) => {
+        const phone = getPhoneFromRow(r, mappings);
+        if (!phone || !dupePhones.has(phone)) return null;
+        return buildPreviewRow(r, mappings, i);
+      })
+      .filter(Boolean);
+  }, [rows, mappings, dupePhones]);
+
+  // Add phone column with "Duplicate" tag for the review table
+  const dupeReviewCols = React.useMemo(() => {
+    const cols = [
+      { title: "#", dataIndex: "_rowNum", key: "_rowNum", width: 50 },
+      {
+        title: "Status",
+        key: "_dupTag",
+        width: 100,
+        render: () => <Tag color="orange">Duplicate</Tag>,
+      },
+    ];
+    const seen = new Set(["_rowNum", "_dupTag"]);
+    for (const mapping of Object.values(mappings)) {
+      if (!mapping || mapping.targetType === "skip") continue;
+      let label = "";
+      if (mapping.targetType === "core") label = mapping.targetField;
+      else if (mapping.targetType === "campaign") label = "campaign";
+      else if (mapping.targetType === "caller") label = "caller";
+      else if (mapping.targetType === "fieldData") label = mapping.targetField;
+      if (label && !seen.has(label)) {
+        seen.add(label);
+        cols.push({
+          title: label,
+          dataIndex: label,
+          key: label,
+          ellipsis: true,
+          width: 140,
+          render: (v) => <span className="text-xs">{String(v ?? "")}</span>,
+        });
+      }
+    }
+    return cols;
+  }, [mappings]);
+
   const netNew = dupeStats ? dupeStats.total - dupeStats.dupes : 0;
+  const hasDupes = (dupeStats?.dupes ?? 0) > 0;
 
   return (
     <div className="space-y-6">
@@ -111,7 +164,7 @@ export default function StepPreviewCheck({
               <Statistic
                 title="Duplicates Found"
                 value={dupeStats?.dupes ?? "—"}
-                valueStyle={{ color: dupeStats?.dupes > 0 ? "#E9296A" : "#3f8600" }}
+                valueStyle={{ color: hasDupes ? "#E9296A" : "#3f8600" }}
               />
             )}
           </Card>
@@ -135,11 +188,46 @@ export default function StepPreviewCheck({
             value={duplicateHandling}
             onChange={(e) => onDuplicateHandlingChange(e.target.value)}
           >
-            <Radio value="skip">Skip duplicates (recommended)</Radio>
-            <Radio value="update">Update existing leads with CSV data</Radio>
+            <div className="space-y-2">
+              <div><Radio value="import_all">Import all leads (including duplicates)</Radio></div>
+              <div><Radio value="skip">Skip duplicates</Radio></div>
+              <div><Radio value="update">Update existing leads with CSV data</Radio></div>
+            </div>
           </Radio.Group>
         </div>
       </div>
+
+      {/* Review Duplicates panel */}
+      {hasDupes && !checking && (
+        <Collapse
+          items={[
+            {
+              key: "dupes",
+              label: (
+                <span className="flex items-center gap-2 text-orange-600 font-medium">
+                  <WarningOutlined />
+                  Review {dupeStats.dupes} duplicate{dupeStats.dupes > 1 ? "s" : ""} found in this file
+                </span>
+              ),
+              children: (
+                <div>
+                  <Text className="text-xs text-gray-500 block mb-3">
+                    These rows match existing leads by phone number. Choose how to handle them above.
+                  </Text>
+                  <Table
+                    dataSource={dupeRows}
+                    columns={dupeReviewCols}
+                    pagination={{ pageSize: 10, showSizeChanger: false }}
+                    size="small"
+                    bordered
+                    scroll={{ x: true }}
+                  />
+                </div>
+              ),
+            },
+          ]}
+        />
+      )}
 
       {/* Preview table */}
       <div>
