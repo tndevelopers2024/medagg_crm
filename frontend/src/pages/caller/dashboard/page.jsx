@@ -655,7 +655,7 @@ export default function CallersDashboard() {
                             onClick={() => {
                                 const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
                                 navigate(buildLeadsUrl({
-                                    leadStatus: ['Hot', 'Hot-IP', 'Prospective', 'DNP', 'Recapture New'],
+                                    leadStatus: ['Hot', 'Hot - IP', 'Prospective', 'DNP', 'Recaptured New'],
                                     followupTo: tmr.toISOString().slice(0, 10),
                                     filterOperators: { followup: 'before' },
                                 }));
@@ -670,7 +670,7 @@ export default function CallersDashboard() {
                             icon={CalendarOutlined}
                             color="blue"
                             onClick={() => navigate(buildLeadsUrl({
-                                leadStatus: ['Hot', 'Hot-IP', 'Prospective', 'DNP'],
+                                leadStatus: ['Hot', 'Hot - IP', 'Prospective', 'DNP'],
                                 followupFilter: 'Tomorrow',
                             }))}
                         />

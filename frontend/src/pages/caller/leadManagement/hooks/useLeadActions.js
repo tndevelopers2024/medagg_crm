@@ -52,6 +52,28 @@ export default function useLeadActions({
         return;
       }
 
+      // If status is an "active" stage (Hot, Prospective, DNP, etc.) a follow-up
+      // date is mandatory — the caller must schedule the next call.
+      if (isCaller) {
+        const selectedStage = (leadStages || []).find(
+          (s) =>
+            s.displayLabel === currentData.status ||
+            s.stageName === (currentData.status || "").toLowerCase()
+        );
+        if (selectedStage?.stageCategory === "active") {
+          const hasFollowUp =
+            lead?.followUpAt ||
+            currentData.leadData?.call_later_date ||
+            currentData.leadData?.follow_up_date;
+          if (!hasFollowUp) {
+            toast.error(
+              "Please select a Call Later date before saving — this status requires a follow-up scheduled."
+            );
+            return;
+          }
+        }
+      }
+
       const missingFields = [];
       if (combinedFields && Array.isArray(combinedFields)) {
         combinedFields.forEach((field) => {

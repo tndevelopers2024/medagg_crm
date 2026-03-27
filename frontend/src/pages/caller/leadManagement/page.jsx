@@ -196,6 +196,44 @@ export default function LeadManagement() {
     loadLeadAlarm();
   }, [id]);
 
+  // --- Call Later date guard ---
+  // True when caller has chosen an "active" stage status but hasn't set a follow-up date yet.
+  const needsCallLaterDate = isCaller && (() => {
+    if (!lead || !leadStages?.length) return false;
+    const selectedStage = leadStages.find(
+      (s) => s.displayLabel === status || s.stageName === (status || "").toLowerCase()
+    );
+    if (selectedStage?.stageCategory !== "active") return false;
+    return !lead?.followUpAt && !leadData?.call_later_date && !leadData?.follow_up_date;
+  })();
+
+  // Block browser back button and tab close when follow-up date is missing
+  useEffect(() => {
+    if (!needsCallLaterDate) return;
+
+    // Push a dummy history entry so the browser back triggers popstate instead of leaving
+    window.history.pushState(null, "", window.location.href);
+
+    const onPopState = () => {
+      // Re-push to stay on the page
+      window.history.pushState(null, "", window.location.href);
+      toast.error("Please select a Call Later date before leaving this lead.");
+      openCallYouLater();
+    };
+
+    const onBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "Please select a Call Later date before leaving.";
+    };
+
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [needsCallLaterDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // --- Auto-save logic ---
   const autoSaveSkipCount = useRef(0);
   const autoSaveReady = useRef(false);
@@ -224,6 +262,11 @@ export default function LeadManagement() {
 
   // --- Back navigation guard ---
   const handleBack = () => {
+    if (needsCallLaterDate) {
+      toast.error("Please select a Call Later date before leaving this lead.");
+      openCallYouLater();
+      return;
+    }
     const isInitialNew = ["new", "new lead"].includes(
       (initialStatus || "").toLowerCase()
     );

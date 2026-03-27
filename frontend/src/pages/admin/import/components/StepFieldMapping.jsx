@@ -61,6 +61,46 @@ const IPD_FIELD_OPTIONS = [
   { label: "IPD Status", value: "ipBooking|status" },
   { label: "IPD Date", value: "ipBooking|date" },
 ];
+// ── Auto-detect mapping from column header ─────────────────────────────────────
+function autoDetectMapping(header) {
+  const h = header.toLowerCase().trim();
+  // Phone
+  if (/^(phone|mobile|contact[\s_-]?num(ber)?|phone[\s_-]?num(ber)?|tel(ephone)?)$/.test(h))
+    return { targetType: "core", targetField: "phone" };
+  // Name
+  if (/^(name|full[\s_-]?name|lead[\s_-]?name|customer[\s_-]?name|patient[\s_-]?name)$/.test(h))
+    return { targetType: "core", targetField: "name" };
+  // Email
+  if (/^email/.test(h))
+    return { targetType: "core", targetField: "email" };
+  // Status
+  if (/^(status|lead[\s_-]?status)$/.test(h))
+    return { targetType: "core", targetField: "status" };
+  // Source
+  if (/^source$/.test(h))
+    return { targetType: "core", targetField: "source" };
+  // Notes / feedback
+  if (/^(note[s]?|comment[s]?|remark[s]?|feedback|last[\s_-]?call[\s_-]?outcome)$/.test(h))
+    return { targetType: "core", targetField: "notes" };
+  // Created date
+  if (/^(created[\s_-]?(at|time|date)?|date[\s_-]?created|lead[\s_-]?date)$/.test(h))
+    return { targetType: "core", targetField: "createdTime" };
+  // Follow-up date
+  if (/^(follow[\s_-]?up|call[\s_-]?later[\s_-]?date?)$/.test(h))
+    return { targetType: "core", targetField: "followUpAt" };
+  // Campaign
+  if (/^campaign/.test(h))
+    return { targetType: "campaign", targetField: "" };
+  // Caller / agent
+  if (/^(caller[\s_-]?name|assigned[\s_-]?to|agent|executive)$/.test(h))
+    return { targetType: "caller", targetField: "" };
+  // TelCRM Lead ID
+  if (/^(lead[\s_-]?id|telcrm[\s_-]?lead[\s_-]?id)$/.test(h))
+    return { targetType: "core", targetField: "telcrmLeadId" };
+  // Default: skip
+  return { targetType: "skip", targetField: "" };
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function mappingToOption(mapping) {
   if (!mapping || mapping.targetType === "skip") return "skip|";
@@ -109,14 +149,14 @@ export default function StepFieldMapping({ headers, sampleRows, mappings, onMapp
       .catch(() => { });
   }, []);
 
-  // ── Initialize unmapped fields to "skip" — runs when a new file is loaded ──────────
+  // ── Initialize unmapped fields — auto-detect mapping, fallback to "skip" ──────────
   React.useEffect(() => {
     if (!headers?.length) return;
     const cur = mappingsRef.current;
     const updates = {};
     headers.forEach((h) => {
       if (cur[h] && cur[h].targetType !== "skip") return; // already mapped by user/template
-      updates[h] = { targetType: "skip", targetField: "" };
+      updates[h] = autoDetectMapping(h);
     });
     if (Object.keys(updates).length > 0) {
       onMappingsChange({ ...cur, ...updates });

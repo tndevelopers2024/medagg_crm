@@ -189,6 +189,7 @@ const importLeads = async (req, res) => {
       defaultStatus = "New Lead",
       defaultPlatform = "telcrm",
       duplicateHandling = "skip",
+      importBatchId,
     } = req.body;
 
     if (!Array.isArray(rows) || rows.length === 0) {
@@ -233,37 +234,24 @@ const importLeads = async (req, res) => {
     let failed = 0;
     const errors = [];
 
+    // ── Phase 1: parse all rows and validate phones ───────────────────────────
+    const parsed = []; // { rowIdx, phone, normalizedPhone, digitsOnly, ...fields }
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       try {
-        // 1. Apply mappings → build intermediate object
-        let name = "";
-        let phone = "";
-        let email = "";
-        let status = "";
-        let source = "";
-        let notes = "";
-        let createdTime = null;
-        let metaLeadId = null;
-        let telcrmLeadId = null;
-        let campaignName = "";
-        let callerName = "";
+        let name = "", phone = "", email = "", status = "", source = "", notes = "";
+        let createdTime = null, metaLeadId = null, telcrmLeadId = null;
+        let campaignName = "", callerName = "";
         const customFields = [];
-        // OPD / IPD accumulator objects (merge all mapped columns into one booking)
-        const opdData = {};
-        const ipdData = {};
-        let sharedHospital = ""; // hospital applies to both OPD and IPD
-        let rating = 0;
-        let followUpAt = null;
+        const opdData = {}, ipdData = {};
+        let sharedHospital = "", rating = 0, followUpAt = null;
 
         for (const [csvHeader, mapping] of Object.entries(mappings)) {
           const rawVal = row[csvHeader];
-          // Skip null/undefined/blank/TelCRM placeholder values
           if (rawVal == null || isBlankValue(rawVal)) continue;
           const val = String(rawVal).trim();
           if (!val) continue;
           const { targetType, targetField } = mapping || {};
-
           if (targetType === "skip" || !targetType) continue;
 
           if (targetType === "core") {
@@ -282,12 +270,9 @@ const importLeads = async (req, res) => {
               try { followUpAt = parseDate(rawVal); } catch { followUpAt = null; }
             }
             else if (targetField === "createdTime") {
-              try {
-                createdTime = parseDate(rawVal);
-              } catch (dateErr) {
-                // Soft failure: log a warning but don't skip the row
+              try { createdTime = parseDate(rawVal); } catch (dateErr) {
                 console.warn(`Row ${i + 2}: Could not parse date in column '${csvHeader}' (value: "${rawVal}"): ${dateErr.message}. Using current time.`);
-                createdTime = null; // will fall back to new Date() below
+                createdTime = null;
               }
             }
           } else if (targetType === "campaign") {
@@ -295,45 +280,36 @@ const importLeads = async (req, res) => {
           } else if (targetType === "caller") {
             callerName = val;
           } else if (targetType === "opBooking" && targetField) {
-            // Accumulate OPD booking fields
             if (targetField === "status") opdData.status = val;
             else if (targetField === "date" || targetField === "booked_date") {
-              const parsed = (() => { try { return parseDate(rawVal); } catch { return null; } })();
-              if (parsed) { opdData[targetField === "booked_date" ? "bookedDate" : "date"] = parsed; }
+              const p = (() => { try { return parseDate(rawVal); } catch { return null; } })();
+              if (p) opdData[targetField === "booked_date" ? "bookedDate" : "date"] = p;
             }
             else if (targetField === "sub_status") opdData.subStatus = val;
             else if (targetField === "diagnostics") opdData.diagnostics = val;
           } else if (targetType === "ipBooking" && targetField) {
-            // Accumulate IPD booking fields
             if (targetField === "status") ipdData.status = val;
             else if (targetField === "date") {
-              const parsed = (() => { try { return parseDate(rawVal); } catch { return null; } })();
-              if (parsed) ipdData.date = parsed;
+              const p = (() => { try { return parseDate(rawVal); } catch { return null; } })();
+              if (p) ipdData.date = p;
             }
           } else if (targetType === "fieldData" && targetField) {
-            // Normalize date values if the field name suggests a date
             const isDateField = /date|time|created|booked|follow/i.test(targetField);
             if (isDateField) {
               try {
-                const parsed = parseDate(rawVal);
-                if (parsed) {
-                  const dd = String(parsed.getDate()).padStart(2, '0');
-                  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
-                  const yyyy = parsed.getFullYear();
-                  customFields.push({ name: targetField, values: [`${dd}/${mm}/${yyyy}`] });
-                } else {
-                  customFields.push({ name: targetField, values: [val] });
-                }
-              } catch {
-                customFields.push({ name: targetField, values: [val] });
-              }
+                const p = parseDate(rawVal);
+                if (p) {
+                  const dd = String(p.getDate()).padStart(2, '0');
+                  const mm = String(p.getMonth() + 1).padStart(2, '0');
+                  customFields.push({ name: targetField, values: [`${dd}/${mm}/${p.getFullYear()}`] });
+                } else customFields.push({ name: targetField, values: [val] });
+              } catch { customFields.push({ name: targetField, values: [val] }); }
             } else {
               customFields.push({ name: targetField, values: [val] });
             }
           }
         }
 
-        // 2. Validate phone — treat blanks and placeholders as missing
         if (!phone || isBlankValue(phone)) {
           errors.push({ row: i + 2, reason: "Missing phone number" });
           failed++;
@@ -346,133 +322,132 @@ const importLeads = async (req, res) => {
         }
 
         const normalizedPhone = normalizePhoneWithCode(phone);
-
-        // 3. Build fieldData
-        const fieldData = [];
-        if (name) fieldData.push({ name: "full_name", values: [name] });
-        fieldData.push({ name: "phone_number", values: [normalizedPhone] });
-        if (email) fieldData.push({ name: "email", values: [email] });
-        for (const cf of customFields) {
-          fieldData.push(cf);
-        }
-
-        // 4. Duplicate check — match both +91 and digits-only formats
         const digitsOnly = normalizedPhone.replace(/\D/g, "");
-        const existingLead = await Lead.findOne({
-          fieldData: {
-            $elemMatch: {
-              name: "phone_number",
-              values: { $in: [normalizedPhone, digitsOnly] },
-            },
-          },
-        }).lean();
 
-        if (existingLead) {
-          if (duplicateHandling === "skip") {
-            skipped++;
-            continue;
-          } else if (duplicateHandling === "update") {
-            // Update existing lead fields
-            const updateData = {};
-            if (name) updateData.source = source || existingLead.source;
-            if (notes) updateData.notes = notes;
-            if (status) updateData.status = status;
-            await Lead.findByIdAndUpdate(existingLead._id, { $set: updateData });
-            imported++;
-            continue;
-          }
-        }
-
-        // 5. Resolve campaign and caller
-        const resolvedCampaignId = resolveCampaign(campaignName) || defaultCampaignId || null;
-        const resolvedCallerId = resolveCaller(callerName) || null;
-
-        // 6. Create lead
-        // Build OPD booking entry if any OPD field was mapped
-        const opBookingEntry = Object.keys(opdData).length > 0
-          ? [{
-            fieldData: [],
-            status: opdData.status ? normalizeOpdStatus(opdData.status) : "pending",
-            date: opdData.date || null,
-            hospital: sharedHospital || undefined,
-            remarks: [opdData.subStatus, opdData.diagnostics].filter(Boolean).join(" | ") || undefined,
-          }]
-          : [];
-
-        // Build IPD booking entry if any IPD field was mapped
-        const ipBookingEntry = Object.keys(ipdData).length > 0
-          ? [{
-            fieldData: [],
-            status: ipdData.status ? normalizeIpdStatus(ipdData.status) : "pending",
-            date: ipdData.date || null,
-            hospital: sharedHospital || undefined,
-          }]
-          : [];
-
-        // Extract call_later_date from customFields to set followUpAt if not already set
-        if (!followUpAt) {
-          const callLaterField = customFields.find(cf =>
-            /call_later_date|call_later|calllater/i.test(cf.name)
-          );
-          if (callLaterField && callLaterField.values && callLaterField.values[0]) {
-            try {
-              followUpAt = parseDate(callLaterField.values[0]);
-            } catch { /* ignore parse errors */ }
-          }
-        }
-
-        let doc;
-        try {
-          doc = await Lead.create({
-            leadId: makeLeadId("import"),
-            ...(metaLeadId ? { metaLeadId } : {}),
-            ...(telcrmLeadId ? { telcrmLeadId } : {}),
-            createdTime: (createdTime instanceof Date && !isNaN(createdTime)) ? createdTime : new Date(),
-            fieldData,
-            notes: notes || "",
-            rating: rating || 0,
-            status: status || defaultStatus || "New Lead",
-            source: source || "",
-            platform: defaultPlatform || "telcrm",
-            assignedTo: resolvedCallerId,
-            campaignId: resolvedCampaignId,
-            followUpAt: (followUpAt instanceof Date && !isNaN(followUpAt)) ? followUpAt : null,
-            ...(opBookingEntry.length > 0 ? { opBookings: opBookingEntry } : {}),
-            ...(ipBookingEntry.length > 0 ? { ipBookings: ipBookingEntry } : {}),
-          });
-        } catch (dbErr) {
-          if (dbErr.name === "ValidationError") {
-            const messages = Object.values(dbErr.errors).map(e => `${e.path}: ${e.message}`).join(', ');
-            throw new Error(`Database validation failed: ${messages}`);
-          }
-          throw dbErr;
-        }
-
-        // 7. Socket notification
-        safeEmit(
-          io,
-          "lead:created",
-          {
-            id: doc._id,
-            lead_id: doc.leadId,
-            created_time: doc.createdTime,
-            status: doc.status,
-            assigned_to: doc.assignedTo,
-          },
-          {
-            to: [
-              room.lead(doc._id),
-              doc.assignedTo && room.caller(doc.assignedTo),
-            ],
-          }
-        );
-
-        imported++;
+        parsed.push({
+          rowIdx: i, normalizedPhone, digitsOnly,
+          name, email, status, source, notes, createdTime,
+          metaLeadId, telcrmLeadId, campaignName, callerName,
+          customFields, opdData, ipdData, sharedHospital, rating, followUpAt,
+        });
       } catch (rowErr) {
-        console.error(`importLeads row ${i + 2} error:`, rowErr.message);
+        console.error(`importLeads row ${i + 2} parse error:`, rowErr.message);
         errors.push({ row: i + 2, reason: rowErr.message });
         failed++;
       }
+    }
+
+    // ── Phase 2: bulk duplicate lookup (1 query instead of N) ─────────────────
+    const allNormalized = parsed.map(p => p.normalizedPhone);
+    const allDigits = parsed.map(p => p.digitsOnly);
+    const existingLeads = await Lead.find(
+      { fieldData: { $elemMatch: { name: "phone_number", values: { $in: [...allNormalized, ...allDigits] } } } },
+      "_id telcrmLeadId fieldData notes status source"
+    ).lean();
+
+    const existingPhoneMap = new Map(); // normalizedPhone/digits → lead
+    for (const lead of existingLeads) {
+      const phoneField = (lead.fieldData || []).find(f => f.name === "phone_number");
+      if (phoneField) {
+        for (const v of phoneField.values || []) {
+          existingPhoneMap.set(v, lead);
+          existingPhoneMap.set(v.replace(/\D/g, ""), lead);
+        }
+      }
+    }
+
+    // ── Phase 3: process parsed rows — handle dupes, collect docs to insert ──
+    const docsToInsert = [];
+    const updateOps = []; // { id, data } for "update" mode
+
+    for (const p of parsed) {
+      const existingLead = existingPhoneMap.get(p.normalizedPhone) || existingPhoneMap.get(p.digitsOnly);
+
+      if (existingLead) {
+        if (duplicateHandling === "skip") { skipped++; continue; }
+        if (duplicateHandling === "update") {
+          const updateData = {};
+          if (p.source) updateData.source = p.source;
+          if (p.notes) updateData.notes = p.notes;
+          if (p.status) updateData.status = p.status;
+          updateOps.push({ id: existingLead._id, data: updateData });
+          continue;
+        }
+        // import_all: fall through to create
+      }
+
+      const resolvedCampaignId = resolveCampaign(p.campaignName) || defaultCampaignId || null;
+      const resolvedCallerId = resolveCaller(p.callerName) || null;
+
+      const fieldData = [];
+      if (p.name) fieldData.push({ name: "full_name", values: [p.name] });
+      fieldData.push({ name: "phone_number", values: [p.normalizedPhone] });
+      if (p.email) fieldData.push({ name: "email", values: [p.email] });
+      for (const cf of p.customFields) fieldData.push(cf);
+
+      // Resolve followUpAt from customFields if not already set
+      let followUpAt = p.followUpAt;
+      if (!followUpAt) {
+        const callLaterField = p.customFields.find(cf => /call_later_date|call_later|calllater/i.test(cf.name));
+        if (callLaterField?.values?.[0]) {
+          try { followUpAt = parseDate(callLaterField.values[0]); } catch { /* ignore */ }
+        }
+      }
+
+      const opBookingEntry = Object.keys(p.opdData).length > 0
+        ? [{ fieldData: [], status: p.opdData.status ? normalizeOpdStatus(p.opdData.status) : "pending", date: p.opdData.date || null, hospital: p.sharedHospital || undefined, remarks: [p.opdData.subStatus, p.opdData.diagnostics].filter(Boolean).join(" | ") || undefined }]
+        : [];
+      const ipBookingEntry = Object.keys(p.ipdData).length > 0
+        ? [{ fieldData: [], status: p.ipdData.status ? normalizeIpdStatus(p.ipdData.status) : "pending", date: p.ipdData.date || null, hospital: p.sharedHospital || undefined }]
+        : [];
+
+      docsToInsert.push({
+        leadId: makeLeadId("import"),
+        ...(p.metaLeadId ? { metaLeadId: p.metaLeadId } : {}),
+        ...(p.telcrmLeadId ? { telcrmLeadId: p.telcrmLeadId } : {}),
+        ...(importBatchId ? { batch: importBatchId } : {}),
+        createdTime: (p.createdTime instanceof Date && !isNaN(p.createdTime)) ? p.createdTime : new Date(),
+        fieldData,
+        notes: p.notes || "",
+        rating: p.rating || 0,
+        status: p.status || defaultStatus || "New Lead",
+        source: p.source || "",
+        platform: defaultPlatform || "telcrm",
+        assignedTo: resolvedCallerId,
+        campaignId: resolvedCampaignId,
+        followUpAt: (followUpAt instanceof Date && !isNaN(followUpAt)) ? followUpAt : null,
+        ...(opBookingEntry.length > 0 ? { opBookings: opBookingEntry } : {}),
+        ...(ipBookingEntry.length > 0 ? { ipBookings: ipBookingEntry } : {}),
+      });
+    }
+
+    // ── Phase 4: bulk insert + bulk update ────────────────────────────────────
+    if (docsToInsert.length > 0) {
+      try {
+        const insertedDocs = await Lead.insertMany(docsToInsert, { ordered: false });
+        imported += insertedDocs.length;
+        // Socket notifications for inserted leads
+        for (const doc of insertedDocs) {
+          safeEmit(io, "lead:created", { id: doc._id, lead_id: doc.leadId, created_time: doc.createdTime, status: doc.status, assigned_to: doc.assignedTo },
+            { to: [room.lead(doc._id), doc.assignedTo && room.caller(doc.assignedTo)] });
+        }
+      } catch (insertErr) {
+        if (insertErr.name === "BulkWriteError" || insertErr.writeErrors) {
+          // Partial success — some docs were inserted
+          imported += insertErr.result?.nInserted || 0;
+          for (const we of insertErr.writeErrors || []) {
+            failed++;
+            errors.push({ row: we.index + 2, reason: we.errmsg || "Insert failed" });
+          }
+        } else {
+          throw insertErr;
+        }
+      }
+    }
+
+    if (updateOps.length > 0) {
+      await Promise.all(updateOps.map(op => Lead.findByIdAndUpdate(op.id, { $set: op.data })));
+      imported += updateOps.length;
     }
 
     // Broadcast bulk update event so admin list refreshes

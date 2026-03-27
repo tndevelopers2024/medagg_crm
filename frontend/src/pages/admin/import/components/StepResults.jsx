@@ -1,6 +1,7 @@
 import React from "react";
 import { Spin, Progress, Statistic, Row, Col, Card, Table, Button, Typography, Alert } from "antd";
-import { DownloadOutlined, CheckCircleOutlined, LoadingOutlined } from "@ant-design/icons";
+import { DownloadOutlined, CheckCircleOutlined, LoadingOutlined, EyeOutlined } from "@ant-design/icons";
+import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 
 const { Text } = Typography;
@@ -13,12 +14,30 @@ function downloadErrorReport(errors) {
   XLSX.writeFile(wb, "import_errors.csv");
 }
 
-export default function StepResults({ result, loading }) {
+export default function StepResults({ result, loading, batchProgress, importBatchId }) {
+  const navigate = useNavigate();
   if (loading) {
+    const batchPct = batchProgress
+      ? Math.round((batchProgress.current / batchProgress.total) * 100)
+      : 0;
     return (
-      <div className="flex flex-col items-center py-16 space-y-4">
+      <div className="flex flex-col items-center py-12 space-y-5 max-w-sm mx-auto">
         <Spin indicator={<LoadingOutlined style={{ fontSize: 48 }} spin />} />
-        <Text className="text-gray-500">Importing leads, please wait…</Text>
+        {batchProgress ? (
+          <>
+            <Text className="text-gray-600 font-medium">
+              Processing batch {batchProgress.current} of {batchProgress.total}…
+            </Text>
+            <Progress percent={batchPct} status="active" className="w-full" />
+            <div className="flex gap-6 text-sm text-gray-500">
+              <span className="text-green-600 font-medium">✓ {batchProgress.imported} imported</span>
+              {batchProgress.skipped > 0 && <span className="text-yellow-600">⊘ {batchProgress.skipped} skipped</span>}
+              {batchProgress.failed > 0 && <span className="text-red-500">✕ {batchProgress.failed} failed</span>}
+            </div>
+          </>
+        ) : (
+          <Text className="text-gray-500">Starting import…</Text>
+        )}
       </div>
     );
   }
@@ -100,11 +119,29 @@ export default function StepResults({ result, loading }) {
         </div>
       )}
 
-      {imported > 0 && failed === 0 && (
+      {imported > 0 && (
         <Alert
           type="success"
-          message={`All ${imported} leads imported successfully! You can view them in the Leads section.`}
           showIcon
+          message={
+            <div className="flex items-center justify-between gap-4">
+              <span>
+                {failed === 0
+                  ? `All ${imported} leads imported successfully!`
+                  : `${imported} leads imported successfully.`}
+              </span>
+              {importBatchId && (
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<EyeOutlined />}
+                  onClick={() => navigate(`/leads?batch=${encodeURIComponent(importBatchId)}`)}
+                >
+                  View Imported Leads
+                </Button>
+              )}
+            </div>
+          }
         />
       )}
     </div>

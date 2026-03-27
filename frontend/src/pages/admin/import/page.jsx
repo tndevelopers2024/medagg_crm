@@ -43,6 +43,9 @@ export default function CsvImportPage() {
   // Step 4 state
   const [importing, setImporting] = React.useState(false);
   const [result, setResult] = React.useState(null);
+  const [batchProgress, setBatchProgress] = React.useState(null);
+  // batchProgress: { current, total, imported, skipped, failed }
+  const [importBatchId, setImportBatchId] = React.useState(null);
 
   const handleNext = async () => {
     if (current === 0 && !parsedData) {
@@ -73,25 +76,66 @@ export default function CsvImportPage() {
     setCurrent((c) => c + 1);
   };
 
+  const BATCH_SIZE = 300;
+
   const runImport = async () => {
     if (!parsedData?.rows?.length) return;
     setImporting(true);
+    setBatchProgress(null);
     setCurrent(3);
+
+    // Unique ID for this import session — used to filter "View Leads" after import
+    const batchId = `import_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    setImportBatchId(batchId);
+
+    const allRows = parsedData.rows;
+    const batches = [];
+    for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
+      batches.push(allRows.slice(i, i + BATCH_SIZE));
+    }
+
+    let totalImported = 0;
+    let totalSkipped = 0;
+    let totalFailed = 0;
+    const allErrors = [];
+
     try {
-      const res = await importCsvLeads({
-        rows: parsedData.rows,
-        mappings,
-        defaultCampaignId: null,
-        defaultStatus: "new",
-        defaultPlatform: "telcrm",
-        duplicateHandling,
-      });
-      setResult(res);
+      for (let b = 0; b < batches.length; b++) {
+        setBatchProgress({
+          current: b + 1,
+          total: batches.length,
+          imported: totalImported,
+          skipped: totalSkipped,
+          failed: totalFailed,
+        });
+
+        const res = await importCsvLeads({
+          rows: batches[b],
+          mappings,
+          defaultCampaignId: null,
+          defaultStatus: "New Lead",
+          defaultPlatform: "telcrm",
+          duplicateHandling,
+          importBatchId: batchId,
+        });
+
+        totalImported += res.imported || 0;
+        totalSkipped += res.skipped || 0;
+        totalFailed += res.failed || 0;
+        // Adjust row numbers to be relative to full file (not just the batch)
+        const batchOffset = b * BATCH_SIZE;
+        for (const e of res.errors || []) {
+          allErrors.push({ ...e, row: (e.row || 0) + batchOffset });
+        }
+      }
+
+      setResult({ imported: totalImported, skipped: totalSkipped, failed: totalFailed, errors: allErrors });
     } catch (err) {
       message.error("Import failed: " + (err?.response?.data?.error || err.message));
-      setResult({ imported: 0, skipped: 0, failed: parsedData.rows.length, errors: [] });
+      setResult({ imported: totalImported, skipped: totalSkipped, failed: totalFailed + (allRows.length - totalImported - totalSkipped - totalFailed), errors: allErrors });
     } finally {
       setImporting(false);
+      setBatchProgress(null);
     }
   };
 
@@ -103,9 +147,11 @@ export default function CsvImportPage() {
     setCurrent(0);
     setParsedData(null);
     setMappings({});
-    setDuplicateHandling("skip");
+    setDuplicateHandling("import_all");
     setResult(null);
     setImporting(false);
+    setBatchProgress(null);
+    setImportBatchId(null);
   };
 
   const renderStep = () => {
@@ -138,7 +184,7 @@ export default function CsvImportPage() {
           />
         );
       case 3:
-        return <StepResults result={result} loading={importing} />;
+        return <StepResults result={result} loading={importing} batchProgress={batchProgress} importBatchId={importBatchId} />;
       default:
         return null;
     }
@@ -175,7 +221,7 @@ export default function CsvImportPage() {
                 )}
               </div>
               <div className="flex gap-3">
-                <Button onClick={() => navigate("/leads")}>View Leads</Button>
+                <Button onClick={() => navigate(importBatchId && isImportStep ? `/leads?batch=${encodeURIComponent(importBatchId)}` : "/leads")}>View Leads</Button>
                 {!isImportStep && (
                   <Button
                     type="primary"
